@@ -73,8 +73,8 @@ def train(sess, m_train, m_valid):
   valid_writer = tf.summary.FileWriter(summary_prefix + '/valid', sess.graph)
 
   n_task = len(m_train.tensors)
-  loss_summary = _summary_mean(m_train.tensors, 2, name="mean-loss")
-  acc_summary = _summary_mean(m_train.tensors, 1, name="mean-acc")
+  loss_mean_summary = _summary_mean(m_train.tensors, 2, name="mean-loss")
+  acc_mean_summary = _summary_mean(m_train.tensors, 1, name="mean-acc")
   acc_mean = _summary_mean(m_valid.tensors, 1, "valid/acc")
 
   batches = int(16 * 82/FLAGS.batch_size)
@@ -83,7 +83,7 @@ def train(sess, m_train, m_valid):
   for epoch in range(FLAGS.num_epochs):
     all_loss, all_acc = 0., 0.
     for batch in range(batches):
-      train_fetch = [m_train.tensors, m_train.train_ops, loss_summary, acc_summary]
+      train_fetch = [m_train.tensors, m_train.train_ops, loss_mean_summary, acc_mean_summary]
 
       res, _, loss_summary, acc_summary = sess.run(train_fetch)    # res = [[summary], [acc], [loss]]
       res = np.array(res)
