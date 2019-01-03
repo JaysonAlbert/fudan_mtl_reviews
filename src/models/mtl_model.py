@@ -1,9 +1,20 @@
 import tensorflow as tf
-from models.base_model import * 
+from models.base_model import *
+from models.lstm import LSTMLayer
 
 FLAGS = tf.app.flags.FLAGS
 
 TASK_NUM=14
+
+
+def _get_model():
+    if FLAGS.model == "cnn":
+      return ConvLayer('conv_shared', FILTER_SIZES)
+    elif FLAGS.model == "lstm":
+      return LSTMLayer('lstm_shared')
+    else:
+      raise "model type '{}'not support, only cnn and lstm are supported".format(FLAGS.model)
+
 
 class MTLModel(BaseModel):
 
@@ -21,8 +32,8 @@ class MTLModel(BaseModel):
                                       initializer=word_embed,
                                       dtype=tf.float32,
                                       trainable=w_trainable)
-    
-    self.shared_conv = ConvLayer('conv_shared', FILTER_SIZES)
+
+    self.shared_conv = _get_model()
     self.shared_linear = LinearLayer('linear_shared', TASK_NUM, True)
 
     self.tensors = []
@@ -78,12 +89,10 @@ class MTLModel(BaseModel):
     if self.is_train:
       sentence = tf.nn.dropout(sentence, FLAGS.keep_prob)
     
-    conv_layer = ConvLayer('conv_task', FILTER_SIZES)
+    conv_layer = _get_model()
     conv_out = conv_layer(sentence)
-    conv_out = max_pool(conv_out, 500)
 
     shared_out = self.shared_conv(sentence)
-    shared_out = max_pool(shared_out, 500)
 
     if self.adv:
       feature = tf.concat([conv_out, shared_out], axis=1)
@@ -114,13 +123,22 @@ class MTLModel(BaseModel):
     acc = tf.cast(tf.equal(pred, labels), tf.float32)
     acc = tf.reduce_mean(acc)
 
-    self.tensors.append((acc, loss))
+    merged = tf.summary.merge([
+      tf.summary.scalar("loss_ce", loss_ce),
+      tf.summary.scalar("loss_adv", 0.05*loss_adv),
+      tf.summary.scalar("loss_diff", loss_diff),
+      tf.summary.scalar("loss", loss),
+      tf.summary.scalar("l2_loss", FLAGS.l2_coef*(loss_l2+loss_adv_l2)),
+      tf.summary.scalar('acc', acc),
+    ])
+
+    self.tensors.append((merged, acc, loss))
     # self.tensors.append((acc, loss, pred))
     
   def build_train_op(self):
     if self.is_train:
       self.train_ops = []
-      for _, loss in self.tensors:
+      for merged, _, loss in self.tensors:
         train_op = optimize(loss)
         self.train_ops.append(train_op)
 

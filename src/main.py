@@ -9,18 +9,14 @@ from inputs import fudan
 from models import mtl_model
 # tf.set_random_seed(0)
 # np.random.seed(0)
+tf.enable_eager_execution()
 
 flags = tf.app.flags
 
-flags.DEFINE_integer("word_dim", 300, "word embedding size")
 flags.DEFINE_integer("num_epochs", 100, "number of epochs")
-flags.DEFINE_integer("batch_size", 16, "batch size")
+flags.DEFINE_integer("batch_size", 512, "batch size")
 
-flags.DEFINE_boolean('adv', False, 'set True to adv training')
-flags.DEFINE_boolean('test', False, 'set True to test')
-flags.DEFINE_boolean('build_data', False, 'set True to generate data')
-
-FLAGS = tf.app.flags.FLAGS
+FLAGS = flags.FLAGS
 
 def build_data():
   '''load raw data, build vocab, build TFRecord data, trim embeddings
@@ -47,7 +43,7 @@ def build_data():
   def _trim_embed():
     print('trimming pretrained embeddings')
     # util.trim_embeddings(50)
-    util.trim_embeddings(300)
+    util.trim_embeddings(FLAGS.word_dim)
 
   print('load raw data')
   all_data = []
@@ -58,26 +54,49 @@ def build_data():
 
   _build_data(all_data)
   _trim_embed()
+
+
+def _summary_mean(tensor, pos, name):
+  mean = tf.stack([t[pos] for t in tensor], axis=0)
+  mean = tf.reduce_mean(mean, axis=0)
+  return tf.summary.scalar(name, mean)
+
   
 def train(sess, m_train, m_valid):
   best_acc, best_step= 0., 0
   start_time = time.time()
   orig_begin_time = start_time
 
+  summary_prefix = os.path.join(FLAGS.logdir, model_name())
+
+  train_writer = tf.summary.FileWriter(summary_prefix + '/train', sess.graph)
+  valid_writer = tf.summary.FileWriter(summary_prefix + '/valid', sess.graph)
+
   n_task = len(m_train.tensors)
+  loss_summary = _summary_mean(m_train.tensors, 2, name="mean-loss")
+  acc_summary = _summary_mean(m_train.tensors, 1, name="mean-acc")
+  acc_mean = _summary_mean(m_valid.tensors, 1, "valid/acc")
+
+  batches = int(16 * 82/FLAGS.batch_size)
+
+  num_step = 0
   for epoch in range(FLAGS.num_epochs):
     all_loss, all_acc = 0., 0.
-    for batch in range(82):
-      for i in range(n_task):
-        acc, loss = m_train.tensors[i]
-        train_op = m_train.train_ops[i]
-        train_fetch = [train_op, loss, acc]
-        _, loss, acc = sess.run(train_fetch)
-        all_loss += loss
-        all_acc += acc
+    for batch in range(batches):
+      train_fetch = [m_train.tensors, m_train.train_ops, loss_summary, acc_summary]
 
-    all_loss /= (82*n_task)
-    all_acc /= (82*n_task)
+      res, _, loss_summary, acc_summary = sess.run(train_fetch)    # res = [[summary], [acc], [loss]]
+      res = np.array(res)
+
+      for summary in list(res[:, 0]) + [loss_summary, acc_summary]:
+        train_writer.add_summary(summary, num_step)
+
+      all_loss += sum(res[:, 2].astype(np.float))
+      all_acc += sum(res[:, 1].astype(np.float))
+      num_step = num_step + 1
+
+    all_loss /= (batches*n_task)
+    all_acc /= (batches*n_task)
 
     # epoch duration
     now = time.time()
@@ -86,10 +105,13 @@ def train(sess, m_train, m_valid):
 
     # valid accuracy
     valid_acc = 0.
-    for i in range(n_task):
-      acc, _ = m_valid.tensors[i]
-      acc = sess.run(acc)
+
+    res, acc_summary = sess.run([m_valid.tensors, acc_mean])
+    for summary, acc, _ in res:
+      valid_writer.add_summary(summary, num_step)
       valid_acc += acc
+    valid_writer.add_summary(acc_summary, num_step)
+
     valid_acc /= n_task
 
     if best_acc < valid_acc:
@@ -113,15 +135,24 @@ def test(sess, m_valid):
   errors = []
 
   print('dataset\terror rate')
-  for i in range(n_task):
-    acc, _ = m_valid.tensors[i]
-    acc = sess.run(acc)
+  res = sess.run(m_valid.tensors)   # res = [[summary], [acc], [loss]]
+  for summary, acc, _ in res:
     err = 1-acc
     print('%s\t%.4f' % (fudan.get_task_name(i), err))
     errors.append(err)
   errors = np.asarray(errors)
   print('mean\t%.4f' % np.mean(errors))
-  
+
+
+def model_name():
+    model_name = 'fudan-mtl'
+    if FLAGS.model == 'lstm':
+      model_name += '-lstm'
+    if FLAGS.adv:
+      model_name += '-adv'
+    return model_name
+
+
 def main(_):
   if FLAGS.build_data:
     build_data()
@@ -136,12 +167,9 @@ def main(_):
       task_name = fudan.get_task_name(task_id)
       all_train.append((task_name, train_data))
       all_test.append((task_name, test_data))
-    
-    model_name = 'fudan-mtl'
-    if FLAGS.adv:
-      model_name += '-adv'
+
     m_train, m_valid = mtl_model.build_train_valid_model(
-            model_name, word_embed, all_train, all_test, FLAGS.adv, FLAGS.test)
+            model_name(), word_embed, all_train, all_test, FLAGS.adv, FLAGS.test)
       
     init_op = tf.group(tf.global_variables_initializer(),
                         tf.local_variables_initializer())# for file queue

@@ -8,6 +8,26 @@ from collections import namedtuple
 
 flags = tf.app.flags
 
+flags.DEFINE_boolean('adv', False, 'set True to adv training')
+
+flags.DEFINE_integer("word_dim", 300, "word embedding size")
+
+flags.DEFINE_boolean('build_data', False, 'set True to generate data')
+
+flags.DEFINE_boolean('test', False, 'set True to test')
+
+flags.DEFINE_integer("num_layers", 2, "number of layers")
+
+flags.DEFINE_integer("hidden_size", 32, "hidden size")
+
+flags.DEFINE_boolean('is_regularize', True, "regularize")
+
+flags.DEFINE_string("model", "cnn", "model type: cnn | lstm")
+
+flags.DEFINE_float("adv_weight", 0.5, "hyper parameter: λ")
+
+flags.DEFINE_float("diff_weight", 1000, "hyper parameter: γ")
+
 flags.DEFINE_string("vocab_file", "data/generated/vocab.mtl.txt", 
                               "vocab of train and test data")
 

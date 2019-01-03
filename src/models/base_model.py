@@ -24,6 +24,7 @@ class BaseModel(object):
     # shared between train and valid model instance
     self.saver = tf.train.Saver(var_list=None)
     self.save_dir = os.path.join(FLAGS.logdir, save_dir)
+    tf.gfile.MakeDirs(self.save_dir)
     self.save_path = os.path.join(self.save_dir, "model.ckpt")
 
   def restore(self, session):
@@ -105,7 +106,7 @@ class ConvLayer(tf.layers.Layer):
                         padding='SAME')
       conv = tf.nn.relu(conv + self.conv[b_name]) # batch,max_len,1,filters
       conv_outs.append(conv)
-    return conv_outs
+    return max_pool(conv_outs, 500)
 
 def max_pool(conv_outs, max_len):
   pool_outs = []
