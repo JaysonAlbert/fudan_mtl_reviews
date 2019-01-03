@@ -5,18 +5,6 @@ import tensorflow as tf
 FLAGS = tf.app.flags.FLAGS
 
 
-def weights_nonzero(labels):
-    return tf.to_float(tf.not_equal(labels, 0))
-
-
-def mask_from_embedding(emb):
-    return weights_nonzero(tf.reduce_sum(tf.abs(emb), axis=2, keepdims=True))
-
-
-def length_from_embedding(emb):
-    return tf.cast(tf.reduce_sum(mask_from_embedding(emb),[1,2]), tf.int32)
-
-
 def _dropout_lstm_cell(train):
   return tf.contrib.rnn.DropoutWrapper(
       tf.contrib.rnn.LSTMCell(FLAGS.hidden_size),
@@ -36,7 +24,7 @@ class LSTMLayer(tf.layers.Layer):
                         for _ in range(FLAGS.num_layers)]
 
     def call(self, inputs, **kwargs):
-        inputs_length = length_from_embedding(inputs)
+        inputs_length = kwargs.pop('inputs_length')
         output, _ = tf.nn.dynamic_rnn(
             tf.contrib.rnn.MultiRNNCell(self.layers),
             inputs,

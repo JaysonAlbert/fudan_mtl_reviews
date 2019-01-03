@@ -16,6 +16,10 @@ def _get_model():
       raise "model type '{}'not support, only cnn and lstm are supported".format(FLAGS.model)
 
 
+def length_from_sentence(sentence):
+    return tf.math.count_nonzero(sentence, axis=1)
+
+
 class MTLModel(BaseModel):
 
   def __init__(self, word_embed, all_data, adv, is_train):
@@ -84,15 +88,17 @@ class MTLModel(BaseModel):
 
   def build_task_graph(self, data):
     task_label, labels, sentence = data
+
+    inputs_length = length_from_sentence(sentence)
     sentence = tf.nn.embedding_lookup(self.word_embed, sentence)
 
     if self.is_train:
       sentence = tf.nn.dropout(sentence, FLAGS.keep_prob)
     
     conv_layer = _get_model()
-    conv_out = conv_layer(sentence)
+    conv_out = conv_layer(sentence, inputs_length=inputs_length)
 
-    shared_out = self.shared_conv(sentence)
+    shared_out = self.shared_conv(sentence, inputs_length=inputs_length)
 
     if self.adv:
       feature = tf.concat([conv_out, shared_out], axis=1)
