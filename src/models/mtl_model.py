@@ -101,7 +101,7 @@ class MTLModel(BaseModel):
     sentence = tf.nn.embedding_lookup(self.word_embed, sentence)
 
     if self.is_train:
-      sentence = tf.nn.dropout(sentence, FLAGS.keep_prob)
+      sentence = tf.nn.dropout(sentence, 1 - FLAGS.symbol_dropout)
     
     conv_layer = _get_model()
     conv_out = conv_layer(sentence, inputs_length=inputs_length)
