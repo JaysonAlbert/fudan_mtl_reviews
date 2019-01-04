@@ -51,11 +51,6 @@ def build_data():
   _trim_embed()
 
 
-def _summary_mean(tensor, pos, name):
-  mean = tf.stack([t[pos] for t in tensor], axis=0)
-  mean = tf.reduce_mean(mean, axis=0)
-  return tf.summary.scalar(name, mean)
-
   
 def train(sess, m_train, m_valid):
   best_acc, best_step= 0., 0
@@ -68,26 +63,25 @@ def train(sess, m_train, m_valid):
   valid_writer = tf.summary.FileWriter(summary_prefix + '/valid', sess.graph)
 
   n_task = len(m_train.tensors)
-  loss_mean_summary = _summary_mean(m_train.tensors, 2, name="mean-loss")
-  acc_mean_summary = _summary_mean(m_train.tensors, 1, name="mean-acc")
-  acc_mean = _summary_mean(m_valid.tensors, 1, "valid/acc")
 
   batches = int(16 * 82/FLAGS.batch_size)
+
+  merged_train = m_train.merged_summary('train')
+  merged_valid = m_valid.merged_summary('valid')
 
   num_step = 0
   for epoch in range(FLAGS.num_epochs):
     all_loss, all_acc = 0., 0.
     for batch in range(batches):
-      train_fetch = [m_train.tensors, m_train.train_ops, loss_mean_summary, acc_mean_summary]
+      train_fetch = [m_train.tensors, m_train.train_ops, merged_train]
 
-      res, _, loss_summary, acc_summary = sess.run(train_fetch)    # res = [[summary], [acc], [loss]]
+      res, _, summary = sess.run(train_fetch)    # res = [[acc], [loss]]
       res = np.array(res)
 
-      for summary in list(res[:, 0]) + [loss_summary, acc_summary]:
-        train_writer.add_summary(summary, num_step)
+      train_writer.add_summary(summary, num_step)
 
-      all_loss += sum(res[:, 2].astype(np.float))
-      all_acc += sum(res[:, 1].astype(np.float))
+      all_loss += sum(res[:, 1].astype(np.float))
+      all_acc += sum(res[:, 0].astype(np.float))
       num_step = num_step + 1
 
     all_loss /= (batches*n_task)
@@ -101,11 +95,10 @@ def train(sess, m_train, m_valid):
     # valid accuracy
     valid_acc = 0.
 
-    res, acc_summary = sess.run([m_valid.tensors, acc_mean])
-    for summary, acc, _ in res:
-      valid_writer.add_summary(summary, num_step)
+    res, summary = sess.run([m_valid.tensors, merged_valid])
+    for  acc, _ in res:
       valid_acc += acc
-    valid_writer.add_summary(acc_summary, num_step)
+    valid_writer.add_summary(summary, num_step)
 
     valid_acc /= n_task
 
@@ -131,7 +124,7 @@ def test(sess, m_valid):
 
   print('dataset\terror rate')
   res = sess.run(m_valid.tensors)   # res = [[summary], [acc], [loss]]
-  for summary, acc, _ in res:
+  for i, acc, _ in enumerate(res):
     err = 1-acc
     print('%s\t%.4f' % (fudan.get_task_name(i), err))
     errors.append(err)

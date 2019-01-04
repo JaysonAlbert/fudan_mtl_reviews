@@ -92,7 +92,7 @@ class ConvLayer(tf.layers.Layer):
     
       super(ConvLayer, self).build(input_shape)
 
-  def call(self, x):
+  def call(self, x, **kwargs):
     x = tf.expand_dims(x, axis=-1)
     input_dim = x.shape.as_list()[2]
     conv_outs = []

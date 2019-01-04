@@ -28,9 +28,9 @@ flags.DEFINE_boolean('is_regularize', True, "regularize")
 
 flags.DEFINE_string("model", "cnn", "model type: cnn | lstm")
 
-flags.DEFINE_float("adv_weight", 0.5, "hyper parameter: λ")
+flags.DEFINE_float("adv_weight", 0.25, "hyper parameter: λ")
 
-flags.DEFINE_float("diff_weight", 1000, "hyper parameter: γ")
+flags.DEFINE_float("diff_weight", 0.01, "hyper parameter: γ")
 
 flags.DEFINE_string("vocab_file", "data/generated/vocab.mtl.txt", 
                               "vocab of train and test data")

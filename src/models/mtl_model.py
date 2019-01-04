@@ -3,6 +3,7 @@ from models.base_model import *
 from models.lstm import LSTMLayer
 
 FLAGS = tf.app.flags.FLAGS
+from inputs import fudan
 
 TASK_NUM=14
 
@@ -18,6 +19,12 @@ def _get_model():
 
 def length_from_sentence(sentence):
     return tf.math.count_nonzero(sentence, axis=1)
+
+
+def _summary_mean(tensor, pos, name):
+  mean = tf.stack([t[pos] for t in tensor], axis=0)
+  mean = tf.reduce_mean(mean, axis=0)
+  return tf.summary.scalar(name, mean)
 
 
 class MTLModel(BaseModel):
@@ -41,6 +48,7 @@ class MTLModel(BaseModel):
     self.shared_linear = LinearLayer('linear_shared', TASK_NUM, True)
 
     self.tensors = []
+    self.metric_tensors = []
 
     for task_name, data in all_data:
       with tf.name_scope(task_name):
@@ -120,8 +128,12 @@ class MTLModel(BaseModel):
     loss_adv, loss_adv_l2 = self.adversarial_loss(shared_out, task_label)
     loss_diff = self.diff_loss(shared_out, conv_out)
 
+    loss_adv = FLAGS.adv_weight * loss_adv
+    loss_diff = FLAGS.diff_weight * loss_diff
+    loss_l2 = FLAGS.l2_coef*(loss_l2+loss_adv_l2)
+
     if self.adv:
-      loss = loss_ce + 0.05*loss_adv + FLAGS.l2_coef*(loss_l2+loss_adv_l2) + loss_diff
+      loss = loss_ce + loss_adv + loss_l2 + loss_diff
     else:
       loss = loss_ce  + FLAGS.l2_coef*loss_l2
     
@@ -129,22 +141,30 @@ class MTLModel(BaseModel):
     acc = tf.cast(tf.equal(pred, labels), tf.float32)
     acc = tf.reduce_mean(acc)
 
-    merged = tf.summary.merge([
-      tf.summary.scalar("loss_ce", loss_ce),
-      tf.summary.scalar("loss_adv", 0.05*loss_adv),
-      tf.summary.scalar("loss_diff", loss_diff),
-      tf.summary.scalar("loss", loss),
-      tf.summary.scalar("l2_loss", FLAGS.l2_coef*(loss_l2+loss_adv_l2)),
-      tf.summary.scalar('acc', acc),
-    ])
+    self.metric_tensors.append((
+      loss_ce, loss_adv, loss_diff, loss_l2, acc ,loss
+    ))
 
-    self.tensors.append((merged, acc, loss))
-    # self.tensors.append((acc, loss, pred))
+    self.tensors.append((acc, loss))
+
+  def merged_summary(self, name_scope):
+    summarys = []
+    metric_names = ['loss-ce', 'loss-adv', 'loss-diff', 'loss-l2', 'acc', 'loss']
+    for i, data in enumerate(self.metric_tensors):
+      with tf.name_scope(fudan.get_task_name(i)):
+        with tf.name_scope(name_scope):
+          summarys.extend([tf.summary.scalar(metric_names[index], tensor) for index, tensor in enumerate(data)])
+
+    with tf.name_scope(name_scope):
+      for i, name in enumerate(metric_names):
+        summarys.append(_summary_mean(self.metric_tensors, i, 'mean-' + name))
+
+    return tf.summary.merge(summarys)
     
   def build_train_op(self):
     if self.is_train:
       self.train_ops = []
-      for merged, _, loss in self.tensors:
+      for _, loss in self.tensors:
         train_op = optimize(loss)
         self.train_ops.append(train_op)
 
