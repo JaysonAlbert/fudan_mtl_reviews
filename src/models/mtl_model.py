@@ -155,9 +155,10 @@ class MTLModel(BaseModel):
         with tf.name_scope(name_scope):
           summarys.extend([tf.summary.scalar(metric_names[index], tensor) for index, tensor in enumerate(data)])
 
-    with tf.name_scope(name_scope):
-      for i, name in enumerate(metric_names):
-        summarys.append(_summary_mean(self.metric_tensors, i, 'mean-' + name))
+    with tf.name_scope('mean'):
+      with tf.name_scope(name_scope):
+        for i, name in enumerate(metric_names):
+          summarys.append(_summary_mean(self.metric_tensors, i, name))
 
     return tf.summary.merge(summarys)
     

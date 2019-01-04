@@ -9,7 +9,6 @@ from inputs import fudan
 from models import mtl_model
 # tf.set_random_seed(0)
 # np.random.seed(0)
-tf.enable_eager_execution()
 
 FLAGS = tf.app.flags.FLAGS
 
