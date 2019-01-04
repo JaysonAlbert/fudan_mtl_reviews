@@ -8,6 +8,10 @@ from collections import namedtuple
 
 flags = tf.app.flags
 
+flags.DEFINE_integer("batch_size", 512, "batch size")
+
+flags.DEFINE_integer("num_epochs", 100, "number of epochs")
+
 flags.DEFINE_boolean('adv', False, 'set True to adv training')
 
 flags.DEFINE_integer("word_dim", 300, "word embedding size")

@@ -11,12 +11,7 @@ from models import mtl_model
 # np.random.seed(0)
 tf.enable_eager_execution()
 
-flags = tf.app.flags
-
-flags.DEFINE_integer("num_epochs", 100, "number of epochs")
-flags.DEFINE_integer("batch_size", 512, "batch size")
-
-FLAGS = flags.FLAGS
+FLAGS = tf.app.flags.FLAGS
 
 def build_data():
   '''load raw data, build vocab, build TFRecord data, trim embeddings
