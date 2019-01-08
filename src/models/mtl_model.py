@@ -51,7 +51,7 @@ class MTLModel(BaseModel):
     self.metric_tensors = []
 
     for task_name, data in all_data:
-      with tf.name_scope(task_name):
+      with tf.variable_scope(task_name):
         self.build_task_graph(data)
 
   def adversarial_loss(self, feature, task_label):

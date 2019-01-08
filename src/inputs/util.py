@@ -10,6 +10,8 @@ flags = tf.app.flags
 
 flags.DEFINE_string("logdir", "saved_models/", "where to save the model")
 
+flags.DEFINE_boolean('use_attention', False, 'whether to use attention')
+
 flags.DEFINE_integer("num_filters", 100, "cnn number of output unit")
 
 flags.DEFINE_float("lrn_rate", 0.001, "learning rate")

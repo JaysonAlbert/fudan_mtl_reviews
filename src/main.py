@@ -111,7 +111,7 @@ def train(sess, m_train, m_valid):
     #   best_acc = valid_acc
     #   best_step = epoch
 
-    m_train.save(sess, gs)
+    m_train.save(sess, global_step)
       
     print("Epoch %d loss %.2f acc %.2f %.4f time %.2f" % 
              (epoch, all_loss, all_acc, valid_acc, duration))
