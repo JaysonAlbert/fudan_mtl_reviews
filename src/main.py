@@ -52,6 +52,10 @@ def build_data():
 
   
 def train(sess, m_train, m_valid):
+  try:
+    m_train.restore(sess)
+  except Exception as e:
+    tf.logging.warning("restore failed: {}".format(str(e)))
   best_acc, best_step= 0., 0
   start_time = time.time()
   orig_begin_time = start_time
@@ -68,16 +72,18 @@ def train(sess, m_train, m_valid):
   merged_train = m_train.merged_summary('train')
   merged_valid = m_valid.merged_summary('valid')
 
+  global_step = tf.train.get_or_create_global_step()
+
   num_step = 0
   for epoch in range(FLAGS.num_epochs):
     all_loss, all_acc = 0., 0.
     for batch in range(batches):
-      train_fetch = [m_train.tensors, m_train.train_ops, merged_train]
+      train_fetch = [m_train.tensors, m_train.train_ops, merged_train, global_step]
 
-      res, _, summary = sess.run(train_fetch)    # res = [[acc], [loss]]
+      res, _, summary, gs = sess.run(train_fetch)    # res = [[acc], [loss]]
       res = np.array(res)
 
-      train_writer.add_summary(summary, num_step)
+      train_writer.add_summary(summary, gs)
 
       all_loss += sum(res[:, 1].astype(np.float))
       all_acc += sum(res[:, 0].astype(np.float))
@@ -94,17 +100,18 @@ def train(sess, m_train, m_valid):
     # valid accuracy
     valid_acc = 0.
 
-    res, summary = sess.run([m_valid.tensors, merged_valid])
+    res, summary, gs = sess.run([m_valid.tensors, merged_valid, global_step])
     for  acc, _ in res:
       valid_acc += acc
-    valid_writer.add_summary(summary, num_step)
+    valid_writer.add_summary(summary, gs)
 
     valid_acc /= n_task
 
-    if best_acc < valid_acc:
-      best_acc = valid_acc
-      best_step = epoch
-      m_train.save(sess, epoch)
+    # if best_acc < valid_acc:
+    #   best_acc = valid_acc
+    #   best_step = epoch
+
+    m_train.save(sess, gs)
       
     print("Epoch %d loss %.2f acc %.2f %.4f time %.2f" % 
              (epoch, all_loss, all_acc, valid_acc, duration))
