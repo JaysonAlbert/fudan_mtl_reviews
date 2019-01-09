@@ -14,8 +14,9 @@ def _dropout_lstm_cell(train):
 
 class LSTMLayer(tf.layers.Layer):
 
-    def __init__(self,layer_name, **kwargs):
-        self.layer_name = layer_name
+    def __init__(self,cell_type, **kwargs):
+        self.cell_type = cell_type
+        self.layer_name = cell_type
         self.hidden_size = FLAGS.hidden_size
         self.num_layers = FLAGS.num_layers
         self.is_regularize = FLAGS.is_regularize
@@ -28,7 +29,14 @@ class LSTMLayer(tf.layers.Layer):
                                          trainable=True
                                          )
 
-        self.layers = [tf.contrib.rnn.LSTMCell(FLAGS.hidden_size)
+        if self.cell_type == "lstm":
+            cell = tf.contrib.rnn.LSTMCell
+        elif self.cell_type == "gru":
+            cell = tf.contrib.rnn.GRUCell
+        else:
+            raise Exception("{} cell not supported, please use lstm or gru".format(self.cell_type))
+
+        self.layers = [cell(FLAGS.hidden_size)
                        for _ in range(FLAGS.num_layers)]
 
         super(LSTMLayer, self).__init__(**kwargs)

@@ -119,9 +119,7 @@ def max_pool(conv_outs, max_len):
 def optimize(loss):
   optimizer = tf.train.AdamOptimizer(FLAGS.lrn_rate)
   global_step = tf.train.get_or_create_global_step()
-  update_ops = tf.get_collection(tf.GraphKeys.UPDATE_OPS)
-  with tf.control_dependencies(update_ops):# for batch_norm
-    train_op = optimizer.minimize(loss, global_step=global_step)
+  train_op = optimizer.minimize(loss, global_step=global_step)
   return train_op
 
 class FlipGradientBuilder(object):

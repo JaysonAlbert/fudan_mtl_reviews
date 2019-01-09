@@ -52,10 +52,6 @@ def build_data():
 
   
 def train(sess, m_train, m_valid):
-  try:
-    m_train.restore(sess)
-  except Exception as e:
-    tf.logging.warning("restore failed: {}".format(str(e)))
   best_acc, best_step= 0., 0
   start_time = time.time()
   orig_begin_time = start_time
@@ -164,14 +160,20 @@ def main(_):
 
     m_train, m_valid = mtl_model.build_train_valid_model(
             model_name(), word_embed, all_train, all_test, FLAGS.adv, FLAGS.test)
-      
-    init_op = tf.group(tf.global_variables_initializer(),
-                        tf.local_variables_initializer())# for file queue
+
     config = tf.ConfigProto()
     config.gpu_options.allow_growth = True
     
     with tf.Session(config=config) as sess:
-      sess.run(init_op)
+
+      try:
+        m_train.restore(sess)
+      except Exception as e:
+        init_op = tf.group(tf.global_variables_initializer(),
+                           tf.local_variables_initializer())  # for file queue
+        sess.run(init_op)
+        tf.logging.warning("restore failed: {}".format(str(e)))
+
       print('='*80)
 
       if FLAGS.test:

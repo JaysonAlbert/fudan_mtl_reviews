@@ -40,7 +40,7 @@ flags.DEFINE_integer("hidden_size", 32, "hidden size")
 
 flags.DEFINE_boolean('is_regularize', True, "regularize")
 
-flags.DEFINE_string("model", "cnn", "model type: cnn | lstm")
+flags.DEFINE_string("model", "cnn", "model type: cnn | lstm | gru")
 
 flags.DEFINE_float("adv_weight", 0.25, "hyper parameter: λ")
 
