@@ -8,6 +8,8 @@ from inputs import util
 from inputs import fudan
 from models import mtl_model
 from tensor2tensor.data_generators.text_encoder import SubwordTextEncoder
+from sklearn.metrics.pairwise import cosine_similarity
+import matplotlib.pyplot as plt
 from tensor2tensor.data_generators.generator_utils import to_example
 # tf.set_random_seed(0)
 # np.random.seed(0)
@@ -179,14 +181,69 @@ def train(sess, m_train, m_valid):
   print('duration: %.2f hours' % duration)
   sys.stdout.flush()
 
+
+def inspect(data, align):
+  encoder = SubwordTextEncoder(FLAGS.vocab_file)
+
+  def topNarg(arr, N=5):
+    return np.sort(arr.argsort()[-N:][::-1])
+
+  def decode(s, array=False):
+    if array:
+      return encoder.decode_list(s)
+    return encoder.decode(s)
+
+  def plot(index):
+
+    # plot all attention weights
+    cur_len = length[index]
+
+    selected_private = private_ali[index]
+    plt.plot(selected_private[:cur_len])
+    selected_shared = shared_ali[index]
+    plt.plot(selected_shared[:cur_len])
+
+    plt.show()
+
+    top_n = 10
+    x = range(top_n)
+    # plot top N attention weights
+    private_index = topNarg(selected_private, top_n)
+    sent = decode(sentence[index][private_index], array=True)
+    plt.plot(x, selected_private[private_index])
+    plt.xticks(x, sent)
+    plt.title("private attention")
+    print(decode(sentence[index][private_index]))
+    plt.show()
+
+    shared_index = topNarg(selected_shared, top_n)
+    sent = decode(sentence[index][shared_index], array=True)
+    plt.plot(x, selected_private[shared_index])
+    plt.xticks(x, sent)
+    plt.title("shared attention")
+    print(decode(sentence[index][shared_index]))
+    plt.show()
+
+
+  # for every category, plot a attention weights that
+  for key in data:
+    task_label, label, sentence = data[key]
+    private_ali, shared_ali = align[key]
+    length = np.count_nonzero(sentence, axis=1)
+    align_similarity = np.diag(cosine_similarity(private_ali, shared_ali))
+    min_sim = np.argmin(align_similarity)
+    plot(min_sim)
+
 def test(sess, m_valid):
   m_valid.restore(sess)
+
   n_task = len(m_valid.tensors)
   errors = []
 
   print('dataset\terror rate')
-  res = sess.run(m_valid.tensors)   # res = [[summary], [acc], [loss]]
-  for i, acc, _ in enumerate(res):
+  res, data, align = sess.run([m_valid.tensors, m_valid.data, m_valid.alignments])   # res = [[acc], [loss]]
+  inspect(data, align)
+  for i, ((acc, _), d, a) in enumerate(zip(res,data.values(), align.values())):
     err = 1-acc
     print('%s\t%.4f' % (fudan.get_task_name(i), err))
     errors.append(err)
@@ -196,8 +253,8 @@ def test(sess, m_valid):
 
 def model_name():
     model_name = 'fudan-mtl'
-    if FLAGS.model == 'lstm':
-      model_name += '-lstm'
+    if FLAGS.model in ['lstm', 'gru']:
+      model_name += '-' + FLAGS.model
     if FLAGS.adv:
       model_name += '-adv'
     if FLAGS.subword:

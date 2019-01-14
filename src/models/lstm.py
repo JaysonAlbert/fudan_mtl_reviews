@@ -20,6 +20,7 @@ class LSTMLayer(tf.layers.Layer):
         self.hidden_size = FLAGS.hidden_size
         self.num_layers = FLAGS.num_layers
         self.is_regularize = FLAGS.is_regularize
+        self.alignment = None
 
         if FLAGS.use_attention:
             with tf.name_scope('attention'):
@@ -56,8 +57,9 @@ class LSTMLayer(tf.layers.Layer):
             with tf.name_scope('attention'):
                 attention = BahdanauAttention(FLAGS.hidden_size, output, inputs_length)
                 alignment, _ = attention(self.q, output)
+                self.alignment = alignment
                 alignment = tf.expand_dims(alignment, 1)
-                context =  tf.matmul(alignment, attention.values)
+                context = tf.matmul(alignment, attention.values)
                 return tf.expand_dims(tf.reduce_mean(context, axis=[1,2]), -1)
 
         return tf.expand_dims(tf.reduce_mean(output, axis=[1,2]), -1)

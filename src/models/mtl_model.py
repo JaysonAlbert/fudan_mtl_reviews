@@ -59,10 +59,12 @@ class MTLModel(BaseModel):
 
     self.tensors = []
     self.metric_tensors = []
+    self.data = {}
+    self.alignments = {}
 
     for task_name, data in all_data:
       with tf.variable_scope(task_name):
-        self.build_task_graph(data)
+        self.build_task_graph(data, task_name)
 
   def adversarial_loss(self, feature, task_label):
     '''make the task classifier cannot reliably predict the task based on 
@@ -104,7 +106,7 @@ class MTLModel(BaseModel):
 
     return loss_diff
 
-  def build_task_graph(self, data):
+  def build_task_graph(self, data, task_name):
     task_label, labels, sentence = data
 
     inputs_length = length_from_sentence(sentence)
@@ -151,10 +153,13 @@ class MTLModel(BaseModel):
     acc = tf.cast(tf.equal(pred, labels), tf.float32)
     acc = tf.reduce_mean(acc)
 
+    # fetches
+    self.data[task_name] = data
+    if FLAGS.model in ["lstm", "gru"]:
+        self.alignments[task_name] = (conv_layer.alignment, self.shared_conv.alignment)
     self.metric_tensors.append((
       loss_ce, loss_adv, loss_diff, loss_l2, acc ,loss
     ))
-
     self.tensors.append((acc, loss))
 
   def merged_summary(self, name_scope):
