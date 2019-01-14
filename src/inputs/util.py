@@ -10,6 +10,8 @@ flags = tf.app.flags
 
 flags.DEFINE_string("logdir", "saved_models/", "where to save the model")
 
+flags.DEFINE_boolean('subword', False, 'use subword text encoder')
+
 flags.DEFINE_boolean('use_attention', False, 'whether to use attention')
 
 flags.DEFINE_integer("num_filters", 100, "cnn number of output unit")
@@ -92,6 +94,8 @@ def write_vocab(vocab, vocab_file=FLAGS.vocab_file):
     vocab: a set of tokens
     vocab_file: filename of the file
   '''
+  base = os.path.dirname(vocab_file)
+  tf.gfile.MakeDirs(base)
   with open(vocab_file, 'w') as f:
     f.write('%s\n' % PAD_WORD) # make sure the pad id is 0
     for w in sorted(list(vocab)):

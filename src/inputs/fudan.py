@@ -12,8 +12,8 @@ DATASETS = ['apparel', 'baby', 'books', 'camera_photo',  'electronics',
 # 'dvd','MR',
 SUFFIX = ['.task.train', '.task.test', '.task.unlabel']
 Raw_Example = namedtuple('Raw_Example', 'label task sentence')
-MTL_VOCAB_FILE = "data/generated/vocab.mtl.txt"
-OUT_DIR = "data/generated"
+
+OUT_DIR = "data/generated/"
 MAX_LEN = 500
 
 def get_task_name(task_id):

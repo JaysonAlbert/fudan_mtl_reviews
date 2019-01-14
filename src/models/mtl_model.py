@@ -1,6 +1,7 @@
 import tensorflow as tf
 from models.base_model import *
 from models.lstm import LSTMLayer
+from tensor2tensor.data_generators.text_encoder import SubwordTextEncoder
 
 FLAGS = tf.app.flags.FLAGS
 from inputs import fudan
@@ -36,11 +37,20 @@ class MTLModel(BaseModel):
     self.adv = adv
 
     # embedding initialization
-    self.word_dim = word_embed.shape[1]
-    w_trainable = True if self.word_dim==50 else False
+    if word_embed is not None:
+      self.word_dim = word_embed.shape[1]
+      self.vocab_size = word_embed.shape[0]
+      w_trainable = True if self.word_dim==50 else False
+    else:
+      encoder = SubwordTextEncoder(FLAGS.vocab_file)
+      self.word_dim = FLAGS.word_dim
+      self.vocab_size = encoder.vocab_size
+      word_embed = tf.random_normal_initializer(0.0, self.word_dim**-0.5)
+      w_trainable = True
     
     self.word_embed = tf.get_variable('word_embed', 
                                       initializer=word_embed,
+                                      shape=[self.vocab_size, self.word_dim],
                                       dtype=tf.float32,
                                       trainable=w_trainable)
 

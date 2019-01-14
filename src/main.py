@@ -7,8 +7,14 @@ import numpy as np
 from inputs import util
 from inputs import fudan
 from models import mtl_model
+from tensor2tensor.data_generators.text_encoder import SubwordTextEncoder
+from tensor2tensor.data_generators.generator_utils import to_example
 # tf.set_random_seed(0)
 # np.random.seed(0)
+
+
+PAD = "<pad>"
+RESERVED_TOKENS = [PAD]
 
 FLAGS = tf.app.flags.FLAGS
 
@@ -25,6 +31,57 @@ def build_data():
     util.write_vocab(vocab)
 
     util.stat_length(data)
+
+  def _build_subtoken_vocab(all_data):
+    print('build subtoken vocab')
+
+    def data_generator():
+      for task_data in all_data:
+        train_data, test_data = task_data
+        for d in train_data + test_data:
+          yield ' '.join(d.sentence)
+
+    def summary(vocab):
+      lens = [len(vocab.encode(sentence)) for sentence in data_generator()]
+      length = sorted(lens)
+      length = np.asarray(length)
+
+      max_len = np.max(length)
+      avg_len = np.mean(length)
+      med_len = np.median(length)
+      print('max_len: {}, avg_len: {}, med_len: {}'.format(max_len, avg_len, med_len))
+
+    encoder = SubwordTextEncoder()
+    vocab = encoder.build_from_generator(data_generator(), 2**13, 200,reserved_tokens=RESERVED_TOKENS)
+
+    vocab_file = FLAGS.vocab_file
+    base = os.path.dirname(vocab_file)
+    tf.gfile.MakeDirs(base)
+    vocab.store_to_file(vocab_file)
+
+    summary(vocab)
+    return vocab
+
+  def _build_subword_data(all_data, vocab):
+    print('build subword data')
+
+    def write(data, writer):
+      for d in data:
+        d = d._asdict()
+        d['sentence'] = vocab.encode(' '.join(d['sentence']))
+        util._pad_or_truncate(d, fudan.MAX_LEN, 0)
+        example = fudan._build_sequence_example(d)
+        writer.write(example.SerializeToString())
+
+    for task_id, task_data in enumerate(all_data):
+      train_data, test_data = task_data
+      train_record_file = os.path.join(fudan.OUT_DIR, fudan.DATASETS[task_id] + '.train.tfrecord')
+      test_record_file = os.path.join(fudan.OUT_DIR, fudan.DATASETS[task_id] + '.test.tfrecord')
+      train_writer = tf.python_io.TFRecordWriter(train_record_file)
+      test_writer = tf.python_io.TFRecordWriter(test_record_file)
+
+      write(train_data, train_writer)
+      write(test_data, test_writer)
     
   def _build_data(all_data):
     print('build data')
@@ -36,18 +93,21 @@ def build_data():
 
   def _trim_embed():
     print('trimming pretrained embeddings')
-    # util.trim_embeddings(50)
     util.trim_embeddings(FLAGS.word_dim)
 
   print('load raw data')
   all_data = []
   for task_data in fudan.load_raw_data():
     all_data.append(task_data)
-  
-  _build_vocab(all_data)
 
-  _build_data(all_data)
-  _trim_embed()
+  if FLAGS.subword:
+    vacob = _build_subtoken_vocab(all_data)
+    _build_subword_data(all_data, vacob)
+  else:
+    _build_vocab(all_data)
+
+    _build_data(all_data)
+    _trim_embed()
 
 
   
@@ -140,15 +200,21 @@ def model_name():
       model_name += '-lstm'
     if FLAGS.adv:
       model_name += '-adv'
+    if FLAGS.subword:
+      model_name += '-subword'
     return model_name
 
 
 def main(_):
   if FLAGS.build_data:
     build_data()
-    exit()
+    return
 
-  word_embed = util.load_embedding(word_dim=FLAGS.word_dim)
+  if FLAGS.subword:
+    word_embed = None
+  else:
+    word_embed = util.load_embedding(word_dim=FLAGS.word_dim)
+
   with tf.Graph().as_default():
     all_train = []
     all_test = []
