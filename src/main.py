@@ -120,8 +120,8 @@ def train(sess, m_train, m_valid):
 
   summary_prefix = os.path.join(FLAGS.logdir, model_name())
 
-  train_writer = tf.summary.FileWriter(summary_prefix + '/train', sess.graph)
-  valid_writer = tf.summary.FileWriter(summary_prefix + '/valid', sess.graph)
+  train_writer = tf.summary.FileWriter(summary_prefix + '_train', sess.graph)
+  valid_writer = tf.summary.FileWriter(summary_prefix + '_valid', sess.graph)
 
   n_task = len(m_train.tensors)
 
