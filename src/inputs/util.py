@@ -70,6 +70,9 @@ flags.DEFINE_string("senna_words_file",
 flags.DEFINE_string("trimmed_embed50_file", 
                              "data/generated/embed50.trim.npy", 
                              "trimmed senna embedding")
+
+flags.DEFINE_boolean('attention_diff', False, "use attention diff loss")
+
 FLAGS = tf.app.flags.FLAGS # load FLAGS.word_dim
 
 PAD_WORD = "<pad>"

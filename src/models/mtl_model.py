@@ -140,7 +140,11 @@ class MTLModel(BaseModel):
     loss_ce = tf.reduce_mean(xentropy)
 
     loss_adv, loss_adv_l2 = self.adversarial_loss(shared_out, task_label)
-    loss_diff = self.diff_loss(shared_out, conv_out)
+
+    if FLAGS.model in ["lstm", "gru"] and FLAGS.attention_diff:
+      loss_diff = self.diff_loss(self.shared_conv.alignment, conv_layer.alignment)
+    else:
+      loss_diff = self.diff_loss(shared_out, conv_out)
 
     loss_adv = FLAGS.adv_weight * loss_adv
     loss_diff = FLAGS.diff_weight * loss_diff
