@@ -60,6 +60,7 @@ class MTLModel(BaseModel):
     self.shared_linear = LinearLayer('linear_shared', TASK_NUM, True)
 
     self.tensors = []
+    self.pred = {}
     self.metric_tensors = []
     self.data = {}
     self.alignments = {}
@@ -99,7 +100,7 @@ class MTLModel(BaseModel):
     correlation_matrix = tf.matmul(
         task_feat, shared_feat, transpose_a=True)
 
-    cost = tf.reduce_mean(tf.square(correlation_matrix)) * 0.01
+    cost = tf.reduce_mean(tf.square(correlation_matrix))
     cost = tf.where(cost > 0, cost, 0, name='value')
 
     assert_op = tf.Assert(tf.is_finite(cost), [cost])
@@ -107,6 +108,19 @@ class MTLModel(BaseModel):
       loss_diff = tf.identity(cost)
 
     return loss_diff
+
+  def attention_diff_loss(self, shared_feat, task_feat):
+      correlation_matrix = tf.matmul(
+          task_feat, shared_feat, transpose_a=True)
+
+      cost = tf.reduce_mean(tf.square(correlation_matrix))
+      cost = tf.where(cost > 0, cost, 0, name='value')
+
+      assert_op = tf.Assert(tf.is_finite(cost), [cost])
+      with tf.control_dependencies([assert_op]):
+          loss_diff = tf.identity(cost)
+
+      return loss_diff
 
   def build_task_graph(self, data, task_name):
     task_label, labels, sentence = data
@@ -142,7 +156,7 @@ class MTLModel(BaseModel):
     loss_adv, loss_adv_l2 = self.adversarial_loss(shared_out, task_label)
 
     if FLAGS.model in ["lstm", "gru"] and FLAGS.attention_diff:
-      loss_diff = self.diff_loss(self.shared_conv.alignment, conv_layer.alignment)
+      loss_diff = self.attention_diff_loss(self.shared_conv.alignment, conv_layer.alignment)
     else:
       loss_diff = self.diff_loss(shared_out, conv_out)
 
@@ -161,6 +175,7 @@ class MTLModel(BaseModel):
 
     # fetches
     self.data[task_name] = data
+    self.pred[task_name] = pred
     if FLAGS.model in ["lstm", "gru"]:
         self.alignments[task_name] = (conv_layer.alignment, self.shared_conv.alignment)
     self.metric_tensors.append((

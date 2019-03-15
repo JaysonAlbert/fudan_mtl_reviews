@@ -10,6 +10,8 @@ from models import mtl_model
 from tensor2tensor.data_generators.text_encoder import SubwordTextEncoder
 from sklearn.metrics.pairwise import cosine_similarity
 import matplotlib.pyplot as plt
+from matplotlib import transforms
+from termcolor import cprint
 from tensor2tensor.data_generators.generator_utils import to_example
 # tf.set_random_seed(0)
 # np.random.seed(0)
@@ -19,6 +21,9 @@ PAD = "<pad>"
 RESERVED_TOKENS = [PAD]
 
 FLAGS = tf.app.flags.FLAGS
+
+
+id = 0
 
 def build_data():
   '''load raw data, build vocab, build TFRecord data, trim embeddings
@@ -165,9 +170,9 @@ def train(sess, m_train, m_valid):
 
     valid_acc /= n_task
 
-    # if best_acc < valid_acc:
-    #   best_acc = valid_acc
-    #   best_step = epoch
+    if best_acc < valid_acc:
+      best_acc = valid_acc
+      best_step = epoch
 
     m_train.save(sess, global_step)
       
@@ -182,7 +187,7 @@ def train(sess, m_train, m_valid):
   sys.stdout.flush()
 
 
-def inspect(data, align):
+def inspect(data, align, pred):
   encoder = SubwordTextEncoder(FLAGS.vocab_file)
 
   def topNarg(arr, N=5):
@@ -193,46 +198,104 @@ def inspect(data, align):
       return encoder.decode_list(s)
     return encoder.decode(s)
 
-  def plot(index):
+  def color_print(orig, color_list):
+    sent = decode(orig, True)
+
+    sentence_length = 0
+    for i, v in enumerate(orig):
+      word = sent[i].replace("_", " ")
+      if i in color_list:
+        cprint(word, "red", end="")
+      else:
+        print(word, end="")
+
+      sentence_length = sentence_length + len(word)
+
+      if sentence_length > 100:
+        sentence_length = 0
+        print()
+
+    print()
+
+  def plot(sentence, private_attention, shared_attention):
 
     # plot all attention weights
-    cur_len = length[index]
 
-    selected_private = private_ali[index]
-    plt.plot(selected_private[:cur_len])
-    selected_shared = shared_ali[index]
-    plt.plot(selected_shared[:cur_len])
+    ax1 = plt.subplot(212)
 
-    plt.show()
+    ax1.plot(private_attention, label="private")
+    ax1.plot(shared_attention, label="shared")
+
+    ax1.legend()
+    plt.ylabel("weight")
+    plt.xlabel("index")
 
     top_n = 10
     x = range(top_n)
-    # plot top N attention weights
-    private_index = topNarg(selected_private, top_n)
-    sent = decode(sentence[index][private_index], array=True)
-    plt.plot(x, selected_private[private_index])
-    plt.xticks(x, sent)
-    plt.title("private attention")
-    print(decode(sentence[index][private_index]))
-    plt.show()
+    def plot_attention(ax, attention, type):
+      top_index = topNarg(attention, top_n)
+      sent = decode(sentence[top_index], array=True)
+      ax.plot(x, attention[top_index])
 
-    shared_index = topNarg(selected_shared, top_n)
-    sent = decode(sentence[index][shared_index], array=True)
-    plt.plot(x, selected_private[shared_index])
-    plt.xticks(x, sent)
-    plt.title("shared attention")
-    print(decode(sentence[index][shared_index]))
+      plt.sca(ax)
+      plt.xticks(x, sent, rotation='vertical')
+
+      plt.title("{} attention".format(type))
+
+      print("Attention type: {}:".format(type))
+      color_print(sentence, top_index)
+
+      plt.ylabel("weight")
+      plt.xlabel("word")
+      plt.tight_layout()
+
+    ax2 = plt.subplot(221)
+    plot_attention(ax2, private_attention, "private")
+
+    print('-' * 100)
+
+    ax3 = plt.subplot(222)
+    plot_attention(ax3, shared_attention, "shared")
+
     plt.show()
 
 
   # for every category, plot a attention weights that
+
+  red_print = lambda x:cprint(x, 'red')
   for key in data:
-    task_label, label, sentence = data[key]
-    private_ali, shared_ali = align[key]
-    length = np.count_nonzero(sentence, axis=1)
-    align_similarity = np.diag(cosine_similarity(private_ali, shared_ali))
+    task_labels, labels, sentences = data[key]
+    task_preds = pred[key]
+    private_alis, shared_alis = align[key]
+    lengths = np.count_nonzero(sentences, axis=1)
+    align_similarity = np.diag(cosine_similarity(private_alis, shared_alis))
     min_sim = np.argmin(align_similarity)
-    plot(min_sim)
+    for i in range(len(sentences)):
+      task_pred = task_preds[i]
+      length = lengths[i]
+      label = labels[i]
+      private_attention = private_alis[i][:length]
+      shared_attention = shared_alis[i][:length]
+      sentence = sentences[i][:length]
+
+      # ----------------------------------------------------------------------------------------------------
+      global id
+      print("=" * 100)
+      print("Id: {}".format(id))
+      print("Task: {}".format(key))
+      print("Label: {}".format(label))
+      if label != task_pred:
+        print("Result: Failed")
+      else:
+        print("Reuslt: Pass")
+
+      plot(sentence, private_attention, shared_attention)
+      id = id + 1
+      # ----------------------------------------------------------------------------------------------------
+      print("=" * 100)
+      print("\n\n")
+
+
 
 def test(sess, m_valid):
   m_valid.restore(sess)
@@ -241,8 +304,8 @@ def test(sess, m_valid):
   errors = []
 
   print('dataset\terror rate')
-  res, data, align = sess.run([m_valid.tensors, m_valid.data, m_valid.alignments])   # res = [[acc], [loss]]
-  inspect(data, align)
+  res, data, align, pred = sess.run([m_valid.tensors, m_valid.data, m_valid.alignments, m_valid.pred])   # res = [[acc], [loss]]
+  inspect(data, align, pred)
   for i, ((acc, _), d, a) in enumerate(zip(res,data.values(), align.values())):
     err = 1-acc
     print('%s\t%.4f' % (fudan.get_task_name(i), err))
