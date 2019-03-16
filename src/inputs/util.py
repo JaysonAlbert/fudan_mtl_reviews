@@ -34,8 +34,6 @@ flags.DEFINE_integer("num_epochs", 100, "number of epochs")
 
 flags.DEFINE_boolean('adv', False, 'set True to adv training')
 
-flags.DEFINE_integer("word_dim", 300, "word embedding size")
-
 flags.DEFINE_boolean('build_data', False, 'set True to generate data')
 
 flags.DEFINE_boolean('test', False, 'set True to test')
@@ -79,9 +77,10 @@ flags.DEFINE_boolean('attention_diff', False, "use attention diff loss")
 
 flags.DEFINE_integer("vocab_size", 8, "vocab size, unit of k")
 
-FLAGS = tf.app.flags.FLAGS # load FLAGS.word_dim
+FLAGS = tf.app.flags.FLAGS # load FLAGS.hidden_size
 
 PAD_WORD = "<pad>"
+VOCAB_FILE = "vocab.mtl.txt"
 
 # similar to nltk.tokenize.regexp.WordPunctTokenizer
 # decimal, inter, 'm, 's, 'll, 've, 're, 'd, n't, words, punctuations
@@ -97,7 +96,7 @@ def wordpunct_tokenizer(line):
   return regexp.findall(line)
 
 def get_vocab_file():
-  return "{}/vocab.mtl.txt".format(data_dir())
+  return "{}/{}".format(data_dir(), VOCAB_FILE)
 
 def data_dir():
   return "{}-{}k".format(FLAGS.data_dir, FLAGS.vocab_size)

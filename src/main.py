@@ -109,7 +109,7 @@ def build_data():
 
   def _trim_embed():
     print('trimming pretrained embeddings')
-    util.trim_embeddings(FLAGS.word_dim)
+    util.trim_embeddings(FLAGS.hidden_size)
 
   print('load raw data')
   all_data = []
@@ -351,7 +351,7 @@ def main(_):
   if FLAGS.subword:
     word_embed = None
   else:
-    word_embed = util.load_embedding(word_dim=FLAGS.word_dim)
+    word_embed = util.load_embedding(word_dim=FLAGS.hidden_size)
 
   with tf.Graph().as_default():
     all_train = []

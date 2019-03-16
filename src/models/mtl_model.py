@@ -45,7 +45,7 @@ class MTLModel(BaseModel):
       shape = None
     else:
       encoder = SubwordTextEncoder(get_vocab_file())
-      self.word_dim = FLAGS.word_dim
+      self.word_dim = FLAGS.hidden_size
       self.vocab_size = encoder.vocab_size
       word_embed = tf.random_normal_initializer(0.0, self.word_dim**-0.5)
       w_trainable = True
