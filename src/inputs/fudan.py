@@ -4,8 +4,10 @@ from collections import namedtuple
 import tensorflow as tf
 
 from inputs import util
+from inputs.util import data_dir
 
-DATA_DIR = "data/mtl-dataset"
+FLAGS = tf.app.flags.FLAGS
+
 DATASETS = ['apparel', 'baby', 'books', 'camera_photo',  'electronics', 
       'health_personal_care', 'imdb', 'kitchen_housewares', 'magazines', 
       'music', 'software', 'sports_outdoors', 'toys_games', 'video']
@@ -13,7 +15,7 @@ DATASETS = ['apparel', 'baby', 'books', 'camera_photo',  'electronics',
 SUFFIX = ['.task.train', '.task.test', '.task.unlabel']
 Raw_Example = namedtuple('Raw_Example', 'label task sentence')
 
-OUT_DIR = "data/generated/"
+
 MAX_LEN = 500
 
 def get_task_name(task_id):
@@ -35,10 +37,17 @@ def _load_raw_data_from_file(filename, task_id):
     #   exit()
   return data
 
+def load_unlabeled_data():
+    for task in DATASETS:
+        file = "{}/{}{}".format(FLAGS.raw_data, task, SUFFIX[2])
+        with open(file, encoding='utf-8') as f:
+            for line in f:
+                yield line
+
 def _load_raw_data(dataset_name, task_id):
-  train_file = os.path.join(DATA_DIR, dataset_name+'.task.train')
+  train_file = os.path.join(FLAGS.raw_data, dataset_name+'.task.train')
   train_data = _load_raw_data_from_file(train_file, task_id)
-  test_file = os.path.join(DATA_DIR, dataset_name+'.task.test')
+  test_file = os.path.join(FLAGS.raw_data, dataset_name+'.task.test')
   test_data = _load_raw_data_from_file(test_file, task_id)
   return train_data, test_data
 
@@ -83,8 +92,8 @@ def write_as_tfrecord(train_data, test_data, task_id, vocab2id):
   '''convert the raw data to TFRecord format and write to disk
   '''
   dataset = DATASETS[task_id]
-  train_record_file = os.path.join(OUT_DIR, dataset+'.train.tfrecord')
-  test_record_file = os.path.join(OUT_DIR, dataset+'.test.tfrecord')
+  train_record_file = os.path.join(data_dir(), dataset+'.train.tfrecord')
+  test_record_file = os.path.join(data_dir(), dataset+'.test.tfrecord')
 
   util.write_as_tfrecord(train_data, 
                          vocab2id, 
@@ -120,8 +129,8 @@ def _parse_tfexample(serialized_example):
 
 def read_tfrecord(epoch, batch_size):
   for dataset in DATASETS:
-    train_record_file = os.path.join(OUT_DIR, dataset+'.train.tfrecord')
-    test_record_file = os.path.join(OUT_DIR, dataset+'.test.tfrecord')
+    train_record_file = os.path.join(data_dir(), dataset+'.train.tfrecord')
+    test_record_file = os.path.join(data_dir(), dataset+'.test.tfrecord')
 
     train_data = util.read_tfrecord(train_record_file, 
                                     epoch, 

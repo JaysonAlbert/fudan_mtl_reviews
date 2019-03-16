@@ -10,6 +10,10 @@ flags = tf.app.flags
 
 flags.DEFINE_string("logdir", "saved_models/", "where to save the model")
 
+flags.DEFINE_string("raw_data", "data/mtl-dataset/", "raw data path")
+
+flags.DEFINE_string("data_dir", "data/generated", "tensorflow record dir")
+
 flags.DEFINE_boolean('subword', False, 'use subword text encoder')
 
 flags.DEFINE_boolean('use_attention', False, 'whether to use attention')
@@ -73,6 +77,8 @@ flags.DEFINE_string("trimmed_embed50_file",
 
 flags.DEFINE_boolean('attention_diff', False, "use attention diff loss")
 
+flags.DEFINE_integer("vocab_size", 8, "vocab size, unit of k")
+
 FLAGS = tf.app.flags.FLAGS # load FLAGS.word_dim
 
 PAD_WORD = "<pad>"
@@ -90,7 +96,13 @@ def wordpunct_tokenizer(line):
   line = re.sub(r"n't", " n't", line)
   return regexp.findall(line)
 
-def write_vocab(vocab, vocab_file=FLAGS.vocab_file):
+def get_vocab_file():
+  return "{}/vocab.mtl.txt".format(data_dir())
+
+def data_dir():
+  return "{}-{}k".format(FLAGS.data_dir, FLAGS.vocab_size)
+
+def write_vocab(vocab, vocab_file=get_vocab_file()):
   '''write vocab to the file
   
   Args:
@@ -128,7 +140,7 @@ def load_embedding(embed_file=None, word_dim=None):
 
 def load_vocab2id(vocab_file=None):
   if vocab_file is None:
-    vocab_file = FLAGS.vocab_file
+    vocab_file = get_vocab_file()
   
   vocab2id = {}
   vocab = _load_vocab(vocab_file)
@@ -153,7 +165,7 @@ def trim_embeddings(word_dim):
   pretrain_words2id = load_vocab2id(pretrain_words_file)
 
   word_embed=[]
-  vocab = _load_vocab(FLAGS.vocab_file)
+  vocab = _load_vocab(get_vocab_file())
   for w in vocab:
     if w in pretrain_words2id:
       id = pretrain_words2id[w]

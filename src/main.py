@@ -10,8 +10,10 @@ from models import mtl_model
 from tensor2tensor.data_generators.text_encoder import SubwordTextEncoder
 from sklearn.metrics.pairwise import cosine_similarity
 import matplotlib.pyplot as plt
-from matplotlib import transforms
 from termcolor import cprint
+import collections
+import json
+from inputs.util import data_dir, get_vocab_file
 from tensor2tensor.data_generators.generator_utils import to_example
 # tf.set_random_seed(0)
 # np.random.seed(0)
@@ -21,6 +23,9 @@ PAD = "<pad>"
 RESERVED_TOKENS = [PAD]
 
 FLAGS = tf.app.flags.FLAGS
+
+
+NUM_VALID_SAMPLES = 400
 
 
 id = 0
@@ -48,6 +53,9 @@ def build_data():
         for d in train_data + test_data:
           yield ' '.join(d.sentence)
 
+      for d in fudan.load_unlabeled_data():
+        yield d
+
     def summary(vocab):
       lens = [len(vocab.encode(sentence)) for sentence in data_generator()]
       length = sorted(lens)
@@ -59,9 +67,10 @@ def build_data():
       print('max_len: {}, avg_len: {}, med_len: {}'.format(max_len, avg_len, med_len))
 
     encoder = SubwordTextEncoder()
-    vocab = encoder.build_from_generator(data_generator(), 2**13, 200,reserved_tokens=RESERVED_TOKENS)
+    vocab_size = 2**10 * FLAGS.vocab_size
+    vocab = encoder.build_from_generator(data_generator(), vocab_size, 200,reserved_tokens=RESERVED_TOKENS)
 
-    vocab_file = FLAGS.vocab_file
+    vocab_file = get_vocab_file()
     base = os.path.dirname(vocab_file)
     tf.gfile.MakeDirs(base)
     vocab.store_to_file(vocab_file)
@@ -82,8 +91,8 @@ def build_data():
 
     for task_id, task_data in enumerate(all_data):
       train_data, test_data = task_data
-      train_record_file = os.path.join(fudan.OUT_DIR, fudan.DATASETS[task_id] + '.train.tfrecord')
-      test_record_file = os.path.join(fudan.OUT_DIR, fudan.DATASETS[task_id] + '.test.tfrecord')
+      train_record_file = os.path.join(data_dir(), fudan.DATASETS[task_id] + '.train.tfrecord')
+      test_record_file = os.path.join(data_dir(), fudan.DATASETS[task_id] + '.test.tfrecord')
       train_writer = tf.python_io.TFRecordWriter(train_record_file)
       test_writer = tf.python_io.TFRecordWriter(test_record_file)
 
@@ -188,7 +197,7 @@ def train(sess, m_train, m_valid):
 
 
 def inspect(data, align, pred):
-  encoder = SubwordTextEncoder(FLAGS.vocab_file)
+  encoder = SubwordTextEncoder(get_vocab_file())
 
   def topNarg(arr, N=5):
     return np.sort(arr.argsort()[-N:][::-1])
@@ -220,8 +229,9 @@ def inspect(data, align, pred):
   def plot(sentence, private_attention, shared_attention):
 
     # plot all attention weights
-
     ax1 = plt.subplot(212)
+    ax2 = plt.subplot(221)
+    ax3 = plt.subplot(222)
 
     ax1.plot(private_attention, label="private")
     ax1.plot(shared_attention, label="shared")
@@ -230,7 +240,7 @@ def inspect(data, align, pred):
     plt.ylabel("weight")
     plt.xlabel("index")
 
-    top_n = 10
+    top_n = min(len(private_attention),10)
     x = range(top_n)
     def plot_attention(ax, attention, type):
       top_index = topNarg(attention, top_n)
@@ -249,20 +259,19 @@ def inspect(data, align, pred):
       plt.xlabel("word")
       plt.tight_layout()
 
-    ax2 = plt.subplot(221)
     plot_attention(ax2, private_attention, "private")
 
     print('-' * 100)
 
-    ax3 = plt.subplot(222)
     plot_attention(ax3, shared_attention, "shared")
 
-    plt.show()
+    plt.savefig("fig/{}.png".format(id))
+
+    plt.clf()
 
 
   # for every category, plot a attention weights that
 
-  red_print = lambda x:cprint(x, 'red')
   for key in data:
     task_labels, labels, sentences = data[key]
     task_preds = pred[key]
@@ -301,17 +310,26 @@ def test(sess, m_valid):
   m_valid.restore(sess)
 
   n_task = len(m_valid.tensors)
-  errors = []
 
-  print('dataset\terror rate')
-  res, data, align, pred = sess.run([m_valid.tensors, m_valid.data, m_valid.alignments, m_valid.pred])   # res = [[acc], [loss]]
-  inspect(data, align, pred)
-  for i, ((acc, _), d, a) in enumerate(zip(res,data.values(), align.values())):
-    err = 1-acc
-    print('%s\t%.4f' % (fudan.get_task_name(i), err))
-    errors.append(err)
-  errors = np.asarray(errors)
-  print('mean\t%.4f' % np.mean(errors))
+  errors = collections.defaultdict(list)
+
+  for _ in range(int(NUM_VALID_SAMPLES / FLAGS.batch_size)):
+      res, data, align, pred = sess.run([m_valid.tensors, m_valid.data, m_valid.alignments, m_valid.pred])   # res = [[acc], [loss]]
+      inspect(data, align, pred)
+      for i, ((acc, _), d, a) in enumerate(zip(res,data.values(), align.values())):
+        err = 1-acc
+        errors[fudan.get_task_name(i)].append(err)
+
+      f = open("result.json", 'w')
+      json.dump(errors,f)
+      f.close()
+
+  mean_errs = []
+  for name in errors:
+      mean_err = np.mean(errors[name])
+      mean_errs.append(mean_err)
+      print("{}\t\t{:.4f}".format(name, mean_err))
+  print('mean\t\t%.4f' % np.mean(mean_errs))
 
 
 def model_name():
