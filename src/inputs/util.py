@@ -6,7 +6,7 @@ import tensorflow as tf
 from collections import defaultdict
 from collections import namedtuple
 
-flags = tf.app.flags
+flags = tf.compat.v1.flags
 
 flags.DEFINE_string("logdir", "saved_models/", "where to save the model")
 
@@ -77,7 +77,7 @@ flags.DEFINE_boolean('attention_diff', False, "use attention diff loss")
 
 flags.DEFINE_integer("vocab_size", 8, "vocab size, unit of k")
 
-FLAGS = tf.app.flags.FLAGS # load FLAGS.hidden_size
+FLAGS = flags.FLAGS # load FLAGS.hidden_size
 
 PAD_WORD = "<pad>"
 VOCAB_FILE = "vocab.mtl.txt"
@@ -109,7 +109,7 @@ def write_vocab(vocab, vocab_file=get_vocab_file()):
     vocab_file: filename of the file
   '''
   base = os.path.dirname(vocab_file)
-  tf.gfile.MakeDirs(base)
+  tf.io.gfile.mkdir(base)
   with open(vocab_file, 'w') as f:
     f.write('%s\n' % PAD_WORD) # make sure the pad id is 0
     for w in sorted(list(vocab)):
@@ -243,7 +243,7 @@ def write_as_tfrecord(raw_data, vocab2id, filename, max_len, build_func):
     max_len: int, pad or truncate sentence to max_len
     build_func: function to convert Raw_Example to tf.train.SequenceExample
   '''
-  writer = tf.python_io.TFRecordWriter(filename)
+  writer = tf.io.TFRecordWriter(filename)
   # text_writer = open(filename+'.debug.txt', 'w')
   pad_id = vocab2id[PAD_WORD]
   
@@ -281,7 +281,7 @@ def read_tfrecord(filename, epoch, batch_size, parse_func, shuffle=True):
     return batch
 
 def _shuf_and_write(filename):
-  reader = tf.python_io.tf_record_iterator(filename)
+  reader = tf.data.TFRecordDataset(filename)
   records = []
   for record in reader:
     # record is of <class 'bytes'>
@@ -290,7 +290,7 @@ def _shuf_and_write(filename):
 
   random.shuffle(records)
   
-  writer = tf.python_io.TFRecordWriter(filename)
+  writer = tf.io.TFRecordWriter(filename)
   for record in records:
     writer.write(record)
   writer.close()
