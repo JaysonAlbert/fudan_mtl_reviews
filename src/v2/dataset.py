@@ -1,10 +1,12 @@
-from v2 import upgraded_utils as generator_utils
-import tensorflow as tf
-from inputs.util import VOCAB_FILE, data_dir
-import os
-import numpy as np
-from multiprocessing import cpu_count
 import json
+import os
+from multiprocessing import cpu_count
+
+import numpy as np
+import tensorflow as tf
+
+from inputs.util import VOCAB_FILE, data_dir
+from v2 import upgraded_utils as generator_utils
 
 EOS = "<EOS>"
 RESERVED_TOKENS = [EOS]
@@ -19,42 +21,47 @@ SUFFIX = ['.task.train', '.task.test', '.task.unlabel']
 
 
 SHUFFLE_BUFFER_SIZE = [
-    len(DATASETS) * 1400,  len(DATASETS) * 400, len(DATASETS) * 2000    # train, test, unlabeled
+    1400, 400, 2000  # train, test, unlabeled
 ]
 
+MAX_LEN = 512
 
-def tfrecord_filenames(category):
-  return [os.path.join(data_dir(),"all-{}.tfrecord".format(SUFFIX[category].split('.')[-1]))]
 
-def generate_samples(category=0):
+def tfrecord_filenames(category, task_id):
+    return [os.path.join(data_dir(), "{}.{}.tfrecord".format(DATASETS[task_id], SUFFIX[category].split('.')[-1]))]
+
+
+def generate_samples(category, task_id):
     '''
 
     :param category: 0: train, 1: test, 2: unlabeld
     :return:
     '''
-    for task_id, task in enumerate(DATASETS):
-        filename = os.path.join(FLAGS.raw_data, task + SUFFIX[category])
-        with open(filename) as f:
-            for line in f:
-                if category == 2:
+
+    task = DATASETS[task_id]
+    filename = os.path.join(FLAGS.raw_data, task + SUFFIX[category])
+    with open(filename) as f:
+        for line in f:
+            if category == 2:
+                yield {
+                    'inputs': line,
+                    'task': task_id
+                }
+            else:
+                segments = line.strip().split('\t')
+                if len(segments) > 1:
                     yield {
-                        'inputs': line,
-                        'task': task_id
+                        'inputs': segments[1],
+                        'task': task_id,
+                        'label': int(segments[0])
                     }
-                else:
-                    segments = line.strip().split('\t')
-                    if len(segments) > 1:
-                        yield {
-                            'inputs': segments[1],
-                            'task': task_id,
-                            'label': int(segments[0])
-                        }
 
 
 def generate_sample_for_vocab():
     for i in range(3):
-        for d in generate_samples(i):
-            yield d['inputs']
+        for task_id in range(len(DATASETS)):
+            for d in generate_samples(i, task_id):
+                yield d['inputs']
 
 
 def get_encoder():
@@ -66,7 +73,7 @@ def get_encoder():
                                                 reserved_tokens=RESERVED_TOKENS)
 
 
-def generated_data(category=0):
+def generated_data(category, task_id):
     '''
 
     :param category: 0: train, 1: test, 2: unlabeld
@@ -101,20 +108,20 @@ def generated_data(category=0):
     summary(encoder)
 
     def generate_encoded():
-        for sample in generate_samples(category):
+        for sample in generate_samples(category, task_id):
             sample["inputs"] = encoder.encode(sample["inputs"])
-            sample["inputs"].append(encoder.encode(EOS)[0])
+            sample["inputs"].append(get_encoder().encode(EOS)[0])
             sample["task"] = [sample["task"]]
             if "label" in sample:
                 sample["label"] = [sample["label"]]
             yield sample
 
-    filenames = tfrecord_filenames(category)
+    filenames = tfrecord_filenames(category, task_id)
     generator_utils.generate_files(generate_encoded(), filenames)
     generator_utils.shuffle_dataset(filenames)
 
 
-def load_data(category=0):
+def load_data(category, task_id):
     '''
 
     :param category: 0: train, 1: test, 2: unlabeld
@@ -134,10 +141,27 @@ def load_data(category=0):
         }
 
     def decode_samples(example_proto):
-        return tf.io.parse_single_example(example_proto, reading_spec)
+        parsed_feature = tf.io.parse_single_example(example_proto, reading_spec)
+        parsed_feature["inputs"] = tf.sparse.to_dense(parsed_feature["inputs"])
+        return parsed_feature
 
-    filenames = tfrecord_filenames(category)
+    filenames = tfrecord_filenames(category, task_id)
     dataset = tf.data.TFRecordDataset(filenames)
     dataset = dataset.map(decode_samples, cpu_count())
-    
-    return dataset.repeat(FLAGS.num_epochs).shuffle(SHUFFLE_BUFFER_SIZE[category])
+
+    batch_size = FLAGS.batch_size
+    num_epochs = FLAGS.num_epochs
+
+    if category == 2:
+        padded_shapes = {
+            'inputs': [None],
+            'task': [None]
+        }
+    else:
+        padded_shapes = {
+            'inputs': [None],
+            'task': [None],
+            'label': [None]
+        }
+
+    return dataset.padded_batch(batch_size, padded_shapes).repeat(num_epochs).shuffle(SHUFFLE_BUFFER_SIZE[category])
