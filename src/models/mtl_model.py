@@ -1,7 +1,7 @@
-import tensorflow as tf
+from tensor2tensor.data_generators.text_encoder import SubwordTextEncoder
+
 from models.base_model import *
 from models.lstm import LSTMLayer
-from tensor2tensor.data_generators.text_encoder import SubwordTextEncoder
 
 FLAGS = tf.app.flags.FLAGS
 from inputs import fudan
@@ -62,6 +62,7 @@ class MTLModel(BaseModel):
 
     self.tensors = []
     self.pred = {}
+    self.separate_acc = {}
     self.metric_tensors = []
     self.data = {}
     self.alignments = {}
@@ -165,6 +166,20 @@ class MTLModel(BaseModel):
     loss_diff = FLAGS.diff_weight * loss_diff
     loss_l2 = FLAGS.l2_coef*(loss_l2+loss_adv_l2)
 
+    def separate_accuracy(linear_layer, private_out, shared_out):
+        w1, w2 = tf.split(linear_layer.weights[0], 2)
+        # b1, b2 = tf.split(linear_layer.weights[1], 2)
+        logits1 = tf.nn.xw_plus_b(private_out, w1, linear_layer.weights[1])
+        logits2 = tf.nn.xw_plus_b(shared_out, w2, linear_layer.weights[1])
+
+        def calcute_acc(logits, labels):
+            pred = tf.argmax(logits, axis=1)
+            acc = tf.cast(tf.equal(pred, labels), tf.float32)
+            return tf.reduce_mean(acc)
+
+        return calcute_acc(logits1, labels), calcute_acc(logits2, labels), logits1, logits2
+
+
     if self.adv:
       loss = loss_ce + loss_adv + loss_l2 + loss_diff
     else:
@@ -177,6 +192,7 @@ class MTLModel(BaseModel):
     # fetches
     self.data[task_name] = data
     self.pred[task_name] = pred
+    self.separate_acc[task_name] = separate_accuracy(linear, conv_out, shared_out)
     if FLAGS.model in ["lstm", "gru"]:
         self.alignments[task_name] = (conv_layer.alignment, self.shared_conv.alignment)
     self.metric_tensors.append((

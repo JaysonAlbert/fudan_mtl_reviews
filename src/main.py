@@ -1,20 +1,22 @@
-import os
-import time
-import sys
-import tensorflow as tf
-import numpy as np
-
-from inputs import util
-from inputs import fudan
-from models import mtl_model
-from tensor2tensor.data_generators.text_encoder import SubwordTextEncoder
-from sklearn.metrics.pairwise import cosine_similarity
-import matplotlib.pyplot as plt
-from termcolor import cprint
 import collections
 import json
+import os
+import sys
+import time
+
+import matplotlib.pyplot as plt
+import numpy as np
+import pandas as pd
+import tensorflow as tf
+from sklearn.metrics.pairwise import cosine_similarity
+from tensor2tensor.data_generators.text_encoder import SubwordTextEncoder
+from termcolor import cprint
+
+from inputs import fudan
+from inputs import util
 from inputs.util import data_dir, get_vocab_file
-from tensor2tensor.data_generators.generator_utils import to_example
+from models import mtl_model
+
 # tf.set_random_seed(0)
 # np.random.seed(0)
 
@@ -196,38 +198,38 @@ def train(sess, m_train, m_valid):
   sys.stdout.flush()
 
 
-def inspect(data, align, pred):
-  encoder = SubwordTextEncoder(get_vocab_file())
-
-  def topNarg(arr, N=5):
+def topNarg(arr, N=5):
     return np.sort(arr.argsort()[-N:][::-1])
 
-  def decode(s, array=False):
+
+def decode(s, array=False):
+    encoder = SubwordTextEncoder(get_vocab_file())
     if array:
-      return encoder.decode_list(s)
+        return encoder.decode_list(s)
     return encoder.decode(s)
 
-  def color_print(orig, color_list):
+
+def color_print(orig, color_list):
     sent = decode(orig, True)
 
     sentence_length = 0
     for i, v in enumerate(orig):
-      word = sent[i].replace("_", " ")
-      if i in color_list:
-        cprint(word, "red", end="")
-      else:
-        print(word, end="")
+        word = sent[i].replace("_", " ")
+        if i in color_list:
+            cprint(word, "red", end="")
+        else:
+            print(word, end="")
 
-      sentence_length = sentence_length + len(word)
+        sentence_length = sentence_length + len(word)
 
-      if sentence_length > 100:
-        sentence_length = 0
-        print()
+        if sentence_length > 100:
+            sentence_length = 0
+            print()
 
     print()
 
-  def plot(sentence, private_attention, shared_attention):
 
+def plot(sentence, private_attention, shared_attention):
     # plot all attention weights
     ax1 = plt.subplot(212)
     ax2 = plt.subplot(221)
@@ -240,24 +242,25 @@ def inspect(data, align, pred):
     plt.ylabel("weight")
     plt.xlabel("index")
 
-    top_n = min(len(private_attention),10)
+    top_n = min(len(private_attention), 10)
     x = range(top_n)
+
     def plot_attention(ax, attention, type):
-      top_index = topNarg(attention, top_n)
-      sent = decode(sentence[top_index], array=True)
-      ax.plot(x, attention[top_index])
+        top_index = topNarg(attention, top_n)
+        sent = decode(sentence[top_index], array=True)
+        ax.plot(x, attention[top_index])
 
-      plt.sca(ax)
-      plt.xticks(x, sent, rotation='vertical')
+        plt.sca(ax)
+        plt.xticks(x, sent, rotation='vertical')
 
-      plt.title("{} attention".format(type))
+        plt.title("{} attention".format(type))
 
-      print("Attention type: {}:".format(type))
-      color_print(sentence, top_index)
+        print("Attention type: {}:".format(type))
+        color_print(sentence, top_index)
 
-      plt.ylabel("weight")
-      plt.xlabel("word")
-      plt.tight_layout()
+        plt.ylabel("weight")
+        plt.xlabel("word")
+        plt.tight_layout()
 
     plot_attention(ax2, private_attention, "private")
 
@@ -270,6 +273,7 @@ def inspect(data, align, pred):
     plt.clf()
 
 
+def inspect(data, align, pred):
   # for every category, plot a attention weights that
 
   for key in data:
@@ -305,6 +309,15 @@ def inspect(data, align, pred):
       print("\n\n")
 
 
+def check_separate_acc(data, align, pred, separate_acc):
+    task_name = 'sports_outdoors'
+    task_labels, labels, sentences = data[task_name]
+    private_align, shared_align = align[task_name]
+    pred = pred[task_name]
+    private_acc, shared_acc, logits1, logits2 = separate_acc[task_name]
+
+
+
 
 def test(sess, m_valid):
   m_valid.restore(sess)
@@ -314,22 +327,24 @@ def test(sess, m_valid):
   errors = collections.defaultdict(list)
 
   for _ in range(int(NUM_VALID_SAMPLES / FLAGS.batch_size)):
-      res, data, align, pred = sess.run([m_valid.tensors, m_valid.data, m_valid.alignments, m_valid.pred])   # res = [[acc], [loss]]
-      inspect(data, align, pred)
-      for i, ((acc, _), d, a) in enumerate(zip(res,data.values(), align.values())):
-        err = 1-acc
-        errors[fudan.get_task_name(i)].append(err)
+      res, data, align, pred, separate_acc = sess.run([m_valid.tensors, m_valid.data, m_valid.alignments, m_valid.pred,
+                                                       m_valid.separate_acc])  # res = [[acc], [loss]]
+      # inspect(data, align, pred)
+      check_separate_acc(data, align, pred, separate_acc)
+      for i, ((acc, _), (private_acc, shared_acc, logits1, logits2)) in enumerate(zip(res, separate_acc.values())):
+          errors[fudan.get_task_name(i)].append([float(acc), float(private_acc), float(shared_acc)])
 
       f = open("result.json", 'w')
       json.dump(errors,f)
       f.close()
 
-  mean_errs = []
-  for name in errors:
-      mean_err = np.mean(errors[name])
-      mean_errs.append(mean_err)
-      print("{}\t\t{:.4f}".format(name, mean_err))
-  print('mean\t\t%.4f' % np.mean(mean_errs))
+  df = 1 - pd.DataFrame(
+      data=np.array(list(errors.values())).mean(axis=1),
+      index=list(errors.keys()),
+      columns=['err', 'private_err', 'shared_err']
+  )
+  print(df)
+  print(df.mean())
 
 
 def model_name():

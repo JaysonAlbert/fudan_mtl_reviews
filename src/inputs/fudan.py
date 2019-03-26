@@ -1,6 +1,6 @@
 import os
-import re
 from collections import namedtuple
+
 import tensorflow as tf
 
 from inputs import util
@@ -8,8 +8,8 @@ from inputs.util import data_dir
 
 FLAGS = tf.app.flags.FLAGS
 
-DATASETS = ['apparel', 'baby', 'books', 'camera_photo',  'electronics', 
-      'health_personal_care', 'imdb', 'kitchen_housewares', 'magazines', 
+DATASETS = ['apparel', 'baby', 'books', 'camera_photo', 'electronics',
+            'health_personal_care', 'imdb', 'kitchen_housewares', 'magazines',
       'music', 'software', 'sports_outdoors', 'toys_games', 'video']
 # 'dvd','MR',
 SUFFIX = ['.task.train', '.task.test', '.task.unlabel']
@@ -23,7 +23,7 @@ def get_task_name(task_id):
 
 def _load_raw_data_from_file(filename, task_id):
   data = []
-  with open(filename) as f:
+  with open(filename, encoding='utf-8') as f:
     # try:
     for line in f:
       segments = line.strip().split('\t')
