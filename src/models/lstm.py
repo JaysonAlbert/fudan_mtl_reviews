@@ -1,4 +1,3 @@
-from tensor2tensor.models.lstm import lstm, lstm_seq2seq
 import tensorflow as tf
 from tensorflow.contrib.seq2seq import BahdanauAttention
 
@@ -60,6 +59,6 @@ class LSTMLayer(tf.layers.Layer):
                 self.alignment = alignment
                 alignment = tf.expand_dims(alignment, 1)
                 context = tf.matmul(alignment, attention.values)
-                return tf.expand_dims(tf.reduce_mean(context, axis=[1,2]), -1)
+                return tf.squeeze(context)
 
-        return tf.expand_dims(tf.reduce_mean(output, axis=[1,2]), -1)
+        return tf.squeeze(tf.reduce_mean(output, axis=[1]))

@@ -1,10 +1,9 @@
 import os
-import re
 import random
+import re
+
 import numpy as np
 import tensorflow as tf
-from collections import defaultdict
-from collections import namedtuple
 
 flags = tf.app.flags
 
@@ -100,6 +99,16 @@ def get_vocab_file():
 
 def data_dir():
   return "{}-{}k".format(FLAGS.data_dir, FLAGS.vocab_size)
+
+
+def get_logdir():
+  return "{}-{}-{}-{}-{}-{}-{}/".format(FLAGS.logdir,
+                                        FLAGS.batch_size,
+                                        FLAGS.hidden_size,
+                                        FLAGS.vocab_size,
+                                        FLAGS.keep_prob,
+                                        FLAGS.num_epochs,
+                                        FLAGS.lrn_rate)
 
 def write_vocab(vocab, vocab_file=get_vocab_file()):
   '''write vocab to the file

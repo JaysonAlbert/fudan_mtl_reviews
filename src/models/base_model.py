@@ -1,6 +1,9 @@
 import os
+
 import tensorflow as tf
 from tensorflow.python.framework import ops
+
+from inputs.util import get_logdir
 
 FLAGS = tf.app.flags.FLAGS
 
@@ -16,7 +19,7 @@ class BaseModel(object):
     '''
     # shared between train and valid model instance
     self.saver = tf.train.Saver(var_list=None)
-    self.save_dir = os.path.join(FLAGS.logdir, save_dir)
+    self.save_dir = os.path.join(get_logdir(), save_dir)
     tf.gfile.MakeDirs(self.save_dir)
     self.save_path = os.path.join(self.save_dir, "model.ckpt")
 

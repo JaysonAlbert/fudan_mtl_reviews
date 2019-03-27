@@ -14,7 +14,7 @@ from termcolor import cprint
 
 from inputs import fudan
 from inputs import util
-from inputs.util import data_dir, get_vocab_file
+from inputs.util import data_dir, get_vocab_file, get_logdir
 from models import mtl_model
 
 # tf.set_random_seed(0)
@@ -134,7 +134,7 @@ def train(sess, m_train, m_valid):
   start_time = time.time()
   orig_begin_time = start_time
 
-  summary_prefix = os.path.join(FLAGS.logdir, model_name())
+  summary_prefix = os.path.join(get_logdir(), model_name())
 
   train_writer = tf.summary.FileWriter(summary_prefix + '/train', sess.graph)
   valid_writer = tf.summary.FileWriter(summary_prefix + '/valid', sess.graph)
