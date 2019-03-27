@@ -18,14 +18,15 @@ class BaseModel(object):
       save_dir: relative path to FLAGS.logdir
     '''
     # shared between train and valid model instance
-    self.saver = tf.train.Saver(var_list=None)
+    self.saver = tf.train.Saver(var_list=None, max_to_keep=20)
     self.save_dir = os.path.join(get_logdir(), save_dir)
     tf.gfile.MakeDirs(self.save_dir)
     self.save_path = os.path.join(self.save_dir, "model.ckpt")
 
   def restore(self, session):
     ckpt = tf.train.get_checkpoint_state(self.save_dir)
-    self.saver.restore(session, ckpt.model_checkpoint_path)
+    self.saver.restore(session, ckpt.all_model_checkpoint_paths[FLAGS.restore_ckpt])
+    # self.saver.restore(session, 'saved_models/full-context-vader-16-32-2-0.5-15-0.001/fudan-mtl-lstm-adv-subword/model.ckpt-10332')
 
   def save(self, session, global_step):
     self.saver.save(session, self.save_path, global_step)
@@ -122,7 +123,12 @@ def max_pool(conv_outs, max_len):
 def optimize(loss):
   optimizer = tf.train.AdamOptimizer(FLAGS.lrn_rate)
   global_step = tf.train.get_or_create_global_step()
-  train_op = optimizer.minimize(loss, global_step=global_step)
+  if FLAGS.freeze_shared:
+    freezed = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, ".*shared.*")
+  else:
+    freezed = []
+  var_list = [v for v in tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES) if v not in freezed]
+  train_op = optimizer.minimize(loss, global_step=global_step, var_list=var_list)
   return train_op
 
 class FlipGradientBuilder(object):

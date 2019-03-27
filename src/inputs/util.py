@@ -17,6 +17,12 @@ flags.DEFINE_boolean('subword', False, 'use subword text encoder')
 
 flags.DEFINE_boolean('use_attention', False, 'whether to use attention')
 
+flags.DEFINE_boolean('vader', False, 'use vader')
+
+flags.DEFINE_integer('restore_ckpt', -1, 'index of checkpoint to restore')
+
+flags.DEFINE_boolean('freeze_shared', False, '')
+
 flags.DEFINE_integer("num_filters", 100, "cnn number of output unit")
 
 flags.DEFINE_float("lrn_rate", 0.001, "learning rate")
@@ -98,16 +104,26 @@ def get_vocab_file():
   return "{}/{}".format(data_dir(), VOCAB_FILE)
 
 def data_dir():
-  return "{}-{}k".format(FLAGS.data_dir, FLAGS.vocab_size)
+  if FLAGS.vader:
+    return "{}-vader-{}k".format(FLAGS.data_dir, FLAGS.vocab_size)
+  else:
+    return "{}-{}k".format(FLAGS.data_dir, FLAGS.vocab_size)
 
 
 def get_logdir():
-  return "{}-{}-{}-{}-{}-{}-{}/".format(FLAGS.logdir,
+  if FLAGS.vader:
+    return "{}-vader-{}-{}-{}-{}-{}/".format(FLAGS.logdir,
+                                             FLAGS.batch_size,
+                                             FLAGS.hidden_size,
+                                             FLAGS.vocab_size,
+                                             FLAGS.keep_prob,
+                                             FLAGS.lrn_rate)
+  else:
+    return "{}-{}-{}-{}-{}-{}/".format(FLAGS.logdir,
                                         FLAGS.batch_size,
                                         FLAGS.hidden_size,
                                         FLAGS.vocab_size,
                                         FLAGS.keep_prob,
-                                        FLAGS.num_epochs,
                                         FLAGS.lrn_rate)
 
 def write_vocab(vocab, vocab_file=get_vocab_file()):

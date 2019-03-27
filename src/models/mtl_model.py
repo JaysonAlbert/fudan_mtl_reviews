@@ -57,8 +57,9 @@ class MTLModel(BaseModel):
                                       dtype=tf.float32,
                                       trainable=w_trainable)
 
-    self.shared_conv = _get_model()
-    self.shared_linear = LinearLayer('linear_shared', TASK_NUM, True)
+    with tf.variable_scope("shared"):
+      self.shared_conv = _get_model()
+      self.shared_linear = LinearLayer('linear_shared', TASK_NUM, True)
 
     self.tensors = []
     self.pred = {}
@@ -81,7 +82,8 @@ class MTLModel(BaseModel):
       feature = tf.nn.dropout(feature, FLAGS.keep_prob)
 
     # Map the features to TASK_NUM classes
-    logits, loss_l2 = self.shared_linear(feature)
+    with tf.variable_scope("shared"):
+      logits, loss_l2 = self.shared_linear(feature)
 
     label = tf.one_hot(task_label, TASK_NUM)
     loss_adv = tf.reduce_mean(
@@ -125,7 +127,10 @@ class MTLModel(BaseModel):
       return loss_diff
 
   def build_task_graph(self, data, task_name):
-    task_label, labels, sentence = data
+    if FLAGS.vader:
+      task_label, labels, sentence, vader = data
+    else:
+      task_label, labels, sentence = data
 
     inputs_length = length_from_sentence(sentence)
     sentence = tf.nn.embedding_lookup(self.word_embed, sentence)
@@ -136,7 +141,8 @@ class MTLModel(BaseModel):
     conv_layer = _get_model()
     conv_out = conv_layer(sentence, inputs_length=inputs_length)
 
-    shared_out = self.shared_conv(sentence, inputs_length=inputs_length)
+    with tf.variable_scope("shared"):
+      shared_out = self.shared_conv(sentence, inputs_length=inputs_length)
 
     if self.adv:
       feature = tf.concat([conv_out, shared_out], axis=1)
@@ -145,6 +151,9 @@ class MTLModel(BaseModel):
 
     if self.is_train:
       feature = tf.nn.dropout(feature, FLAGS.keep_prob)
+
+    if FLAGS.vader:
+      feature = tf.concat([feature, tf.expand_dims(vader, axis=-1)], axis=1)
 
     # Map the features to 2 classes
     linear = LinearLayer('linear', 2, True)
@@ -167,16 +176,25 @@ class MTLModel(BaseModel):
     loss_l2 = FLAGS.l2_coef*(loss_l2+loss_adv_l2)
 
     def separate_accuracy(linear_layer, private_out, shared_out):
-        w1, w2 = tf.split(linear_layer.weights[0], 2)
+      w0 = tf.slice(linear_layer.weights[0], [0, 0], [2 * FLAGS.hidden_size, linear_layer.out_size])
+      w1, w2 = tf.split(w0, 2)
         # b1, b2 = tf.split(linear_layer.weights[1], 2)
         logits1 = tf.nn.xw_plus_b(private_out, w1, linear_layer.weights[1])
         logits2 = tf.nn.xw_plus_b(shared_out, w2, linear_layer.weights[1])
+
+      if FLAGS.vader:
+        w3 = tf.slice(linear_layer.weights[0], [2 * FLAGS.hidden_size - 1, 0], [1, linear_layer.out_size])
+        logits3 = tf.nn.xw_plus_b(tf.expand_dims(vader, axis=-1), w3, linear_layer.weights[1])
 
         def calcute_acc(logits, labels):
             pred = tf.argmax(logits, axis=1)
             acc = tf.cast(tf.equal(pred, labels), tf.float32)
             return tf.reduce_mean(acc)
 
+      if FLAGS.vader:
+        return calcute_acc(logits1, labels), calcute_acc(logits2, labels), calcute_acc(logits3,
+                                                                                       labels), logits1, logits2, logits3
+      else:
         return calcute_acc(logits1, labels), calcute_acc(logits2, labels), logits1, logits2
 
 

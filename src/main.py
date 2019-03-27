@@ -1,13 +1,13 @@
 import collections
 import json
 import os
-import sys
-import time
 
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
+import sys
 import tensorflow as tf
+import time
 from sklearn.metrics.pairwise import cosine_similarity
 from tensor2tensor.data_generators.text_encoder import SubwordTextEncoder
 from termcolor import cprint
@@ -311,18 +311,20 @@ def inspect(data, align, pred):
 
 def check_separate_acc(data, align, pred, separate_acc):
     task_name = 'sports_outdoors'
-    task_labels, labels, sentences = data[task_name]
+    if FLAGS.vader:
+        task_labels, labels, sentences, vaders = data[task_name]
+        private_acc, shared_acc, vader_acc, logits1, logits2, logits3 = separate_acc[task_name]
+    else:
+        task_labels, labels, sentences = data[task_name]
+        private_acc, shared_acc, logits1, logits2 = separate_acc[task_name]
     private_align, shared_align = align[task_name]
     pred = pred[task_name]
-    private_acc, shared_acc, logits1, logits2 = separate_acc[task_name]
 
 
 
 
 def test(sess, m_valid):
   m_valid.restore(sess)
-
-  n_task = len(m_valid.tensors)
 
   errors = collections.defaultdict(list)
 
@@ -331,20 +333,29 @@ def test(sess, m_valid):
                                                        m_valid.separate_acc])  # res = [[acc], [loss]]
       # inspect(data, align, pred)
       check_separate_acc(data, align, pred, separate_acc)
-      for i, ((acc, _), (private_acc, shared_acc, logits1, logits2)) in enumerate(zip(res, separate_acc.values())):
+      if FLAGS.vader:
+          for i, ((acc, _), (private_acc, shared_acc, vader_acc, logits1, logits2, logits3)) in enumerate(
+                  zip(res, separate_acc.values())):
+              errors[fudan.get_task_name(i)].append(
+                  [float(acc), float(private_acc), float(shared_acc), float(vader_acc)])
+      else:
+          for i, ((acc, _), (private_acc, shared_acc, logits1, logits2)) in enumerate(zip(res, separate_acc.values())):
           errors[fudan.get_task_name(i)].append([float(acc), float(private_acc), float(shared_acc)])
 
       f = open("result.json", 'w')
       json.dump(errors,f)
       f.close()
 
+  columns = ['err', 'private_err', 'shared_err', 'vader_err'] if FLAGS.vader else ['err', 'private_err', 'shared_err']
+
   df = 1 - pd.DataFrame(
       data=np.array(list(errors.values())).mean(axis=1),
       index=list(errors.keys()),
-      columns=['err', 'private_err', 'shared_err']
+      columns=columns
   )
   print(df)
   print(df.mean())
+  df.mean().to_csv('result_{}.csv'.format(FLAGS.restore_ckpt))
 
 
 def model_name():
