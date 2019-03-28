@@ -26,9 +26,9 @@ def _load_raw_data_from_file(filename, task_id):
   data = []
   with open(filename, encoding='utf-8') as f:
 
-      if FLAGS.vader:
-          from vaderSentiment.vaderSentiment import SentimentIntensityAnalyzer
-          analyzer = SentimentIntensityAnalyzer()
+    if FLAGS.vader:
+      from vaderSentiment.vaderSentiment import SentimentIntensityAnalyzer
+      analyzer = SentimentIntensityAnalyzer()
     # try:
     for line in f:
       segments = line.strip().split('\t')

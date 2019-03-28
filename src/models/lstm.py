@@ -11,7 +11,7 @@ def _dropout_lstm_cell(train):
       input_keep_prob=1.0 - FLAGS.keep_prob * tf.to_float(train))
 
 
-class LSTMLayer(tf.layers.Layer):
+class LSTMLayer(tf.keras.layers.Layer):
 
     def __init__(self,cell_type, **kwargs):
         self.cell_type = cell_type
@@ -21,10 +21,14 @@ class LSTMLayer(tf.layers.Layer):
         self.is_regularize = FLAGS.is_regularize
         self.alignment = None
 
+        super(LSTMLayer, self).__init__(**kwargs)
+
+
+    def build(self, input_shape):
         if FLAGS.use_attention:
             with tf.name_scope('attention'):
                 self.q = tf.get_variable('q_attention',
-                                         shape=[FLAGS.batch_size, FLAGS.hidden_size],
+                                         shape=[1, self.hidden_size],
                                          dtype=tf.float32,
                                          trainable=True
                                          )
@@ -39,7 +43,8 @@ class LSTMLayer(tf.layers.Layer):
         self.layers = [cell(FLAGS.hidden_size)
                        for _ in range(FLAGS.num_layers)]
 
-        super(LSTMLayer, self).__init__(**kwargs)
+        super(LSTMLayer, self).build(input_shape)
+
 
     def call(self, inputs, **kwargs):
         inputs_length = kwargs.pop('inputs_length')
@@ -59,6 +64,6 @@ class LSTMLayer(tf.layers.Layer):
                 self.alignment = alignment
                 alignment = tf.expand_dims(alignment, 1)
                 context = tf.matmul(alignment, attention.values)
-                return tf.squeeze(context)
+                return tf.squeeze(context, axis=1)
 
-        return tf.squeeze(tf.reduce_mean(output, axis=[1]))
+        return tf.squeeze(tf.reduce_mean(output, axis=[1]), axis=1)

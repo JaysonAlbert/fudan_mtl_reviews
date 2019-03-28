@@ -1,13 +1,13 @@
 import collections
 import json
 import os
+import sys
+import time
 
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
-import sys
 import tensorflow as tf
-import time
 from sklearn.metrics.pairwise import cosine_similarity
 from tensor2tensor.data_generators.text_encoder import SubwordTextEncoder
 from termcolor import cprint
@@ -268,6 +268,8 @@ def plot(sentence, private_attention, shared_attention):
 
     plot_attention(ax3, shared_attention, "shared")
 
+    tf.gfile.MakeDirs("fig")
+
     plt.savefig("fig/{}.png".format(id))
 
     plt.clf()
@@ -277,7 +279,10 @@ def inspect(data, align, pred):
   # for every category, plot a attention weights that
 
   for key in data:
-    task_labels, labels, sentences = data[key]
+    if FLAGS.vader:
+      task_labels, labels, sentences, vaders = data[key]
+    else:
+      task_labels, labels, sentences = data[key]
     task_preds = pred[key]
     private_alis, shared_alis = align[key]
     lengths = np.count_nonzero(sentences, axis=1)
@@ -332,7 +337,7 @@ def test(sess, m_valid):
       res, data, align, pred, separate_acc = sess.run([m_valid.tensors, m_valid.data, m_valid.alignments, m_valid.pred,
                                                        m_valid.separate_acc])  # res = [[acc], [loss]]
       # inspect(data, align, pred)
-      check_separate_acc(data, align, pred, separate_acc)
+      # check_separate_acc(data, align, pred, separate_acc)
       if FLAGS.vader:
           for i, ((acc, _), (private_acc, shared_acc, vader_acc, logits1, logits2, logits3)) in enumerate(
                   zip(res, separate_acc.values())):
@@ -340,7 +345,7 @@ def test(sess, m_valid):
                   [float(acc), float(private_acc), float(shared_acc), float(vader_acc)])
       else:
           for i, ((acc, _), (private_acc, shared_acc, logits1, logits2)) in enumerate(zip(res, separate_acc.values())):
-          errors[fudan.get_task_name(i)].append([float(acc), float(private_acc), float(shared_acc)])
+            errors[fudan.get_task_name(i)].append([float(acc), float(private_acc), float(shared_acc)])
 
       f = open("result.json", 'w')
       json.dump(errors,f)

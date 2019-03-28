@@ -112,15 +112,13 @@ def data_dir():
 
 def get_logdir():
   if FLAGS.vader:
-    return "{}-vader-{}-{}-{}-{}-{}/".format(FLAGS.logdir,
-                                             FLAGS.batch_size,
+    return "{}-vader-{}-{}-{}-{}/".format(FLAGS.logdir,
                                              FLAGS.hidden_size,
                                              FLAGS.vocab_size,
                                              FLAGS.keep_prob,
                                              FLAGS.lrn_rate)
   else:
-    return "{}-{}-{}-{}-{}-{}/".format(FLAGS.logdir,
-                                        FLAGS.batch_size,
+    return "{}-{}-{}-{}-{}/".format(FLAGS.logdir,
                                         FLAGS.hidden_size,
                                         FLAGS.vocab_size,
                                         FLAGS.keep_prob,

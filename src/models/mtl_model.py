@@ -60,6 +60,8 @@ class MTLModel(BaseModel):
     with tf.variable_scope("shared"):
       self.shared_conv = _get_model()
       self.shared_linear = LinearLayer('linear_shared', TASK_NUM, True)
+      
+      # self.shared_linear = tf.keras.layers.Dense(TASK_NUM, activation=None, name='leaner_shared')
 
     self.tensors = []
     self.pred = {}
@@ -82,14 +84,13 @@ class MTLModel(BaseModel):
       feature = tf.nn.dropout(feature, FLAGS.keep_prob)
 
     # Map the features to TASK_NUM classes
-    with tf.variable_scope("shared"):
-      logits, loss_l2 = self.shared_linear(feature)
+    logits, _ = self.shared_linear(feature)
 
     label = tf.one_hot(task_label, TASK_NUM)
     loss_adv = tf.reduce_mean(
         tf.nn.softmax_cross_entropy_with_logits(labels=label, logits=logits))
 
-    return loss_adv, loss_l2
+    return loss_adv
   
   def diff_loss(self, shared_feat, task_feat):
     '''Orthogonality Constraints from https://github.com/tensorflow/models,
@@ -158,13 +159,15 @@ class MTLModel(BaseModel):
     # Map the features to 2 classes
     linear = LinearLayer('linear', 2, True)
     logits, loss_l2 = linear(feature)
+    # linear = tf.keras.layers.Dense(2, activation=None)
+    # logits = linear(feature)
     
     xentropy = tf.nn.softmax_cross_entropy_with_logits(
                           labels=tf.one_hot(labels, 2), 
                           logits=logits)
     loss_ce = tf.reduce_mean(xentropy)
 
-    loss_adv, loss_adv_l2 = self.adversarial_loss(shared_out, task_label)
+    loss_adv = self.adversarial_loss(shared_out, task_label)
 
     if FLAGS.model in ["lstm", "gru"] and FLAGS.attention_diff:
       loss_diff = self.attention_diff_loss(self.shared_conv.alignment, conv_layer.alignment)
@@ -173,23 +176,21 @@ class MTLModel(BaseModel):
 
     loss_adv = FLAGS.adv_weight * loss_adv
     loss_diff = FLAGS.diff_weight * loss_diff
-    loss_l2 = FLAGS.l2_coef*(loss_l2+loss_adv_l2)
 
     def separate_accuracy(linear_layer, private_out, shared_out):
       w0 = tf.slice(linear_layer.weights[0], [0, 0], [2 * FLAGS.hidden_size, linear_layer.out_size])
       w1, w2 = tf.split(w0, 2)
-        # b1, b2 = tf.split(linear_layer.weights[1], 2)
-        logits1 = tf.nn.xw_plus_b(private_out, w1, linear_layer.weights[1])
-        logits2 = tf.nn.xw_plus_b(shared_out, w2, linear_layer.weights[1])
+      logits1 = tf.nn.xw_plus_b(private_out, w1, linear_layer.weights[1])
+      logits2 = tf.nn.xw_plus_b(shared_out, w2, linear_layer.weights[1])
 
       if FLAGS.vader:
         w3 = tf.slice(linear_layer.weights[0], [2 * FLAGS.hidden_size - 1, 0], [1, linear_layer.out_size])
         logits3 = tf.nn.xw_plus_b(tf.expand_dims(vader, axis=-1), w3, linear_layer.weights[1])
 
         def calcute_acc(logits, labels):
-            pred = tf.argmax(logits, axis=1)
-            acc = tf.cast(tf.equal(pred, labels), tf.float32)
-            return tf.reduce_mean(acc)
+          pred = tf.argmax(logits, axis=1)
+          acc = tf.cast(tf.equal(pred, labels), tf.float32)
+          return tf.reduce_mean(acc)
 
       if FLAGS.vader:
         return calcute_acc(logits1, labels), calcute_acc(logits2, labels), calcute_acc(logits3,
@@ -199,9 +200,9 @@ class MTLModel(BaseModel):
 
 
     if self.adv:
-      loss = loss_ce + loss_adv + loss_l2 + loss_diff
+      loss = loss_ce + loss_adv+ loss_diff
     else:
-      loss = loss_ce  + FLAGS.l2_coef*loss_l2
+      loss = loss_ce
     
     pred = tf.argmax(logits, axis=1)
     acc = tf.cast(tf.equal(pred, labels), tf.float32)
@@ -214,13 +215,13 @@ class MTLModel(BaseModel):
     if FLAGS.model in ["lstm", "gru"]:
         self.alignments[task_name] = (conv_layer.alignment, self.shared_conv.alignment)
     self.metric_tensors.append((
-      loss_ce, loss_adv, loss_diff, loss_l2, acc ,loss
+      loss_ce, loss_adv, loss_diff, acc ,loss
     ))
     self.tensors.append((acc, loss))
 
   def merged_summary(self, name_scope):
     summarys = []
-    metric_names = ['loss-ce', 'loss-adv', 'loss-diff', 'loss-l2', 'acc', 'loss']
+    metric_names = ['loss-ce', 'loss-adv', 'loss-diff', 'acc', 'loss']
     for i, data in enumerate(self.metric_tensors):
       with tf.name_scope(fudan.get_task_name(i)):
         with tf.name_scope(name_scope):
