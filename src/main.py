@@ -313,11 +313,15 @@ def run_model(num_examples, is_train, inspect_data=False, plot=False):
                     if is_train:
                         train_fetch = [model.tensors, model.train_ops, merged, global_step]
                         res, _, summary, gs = sess.run(train_fetch)  # res = [[acc], [loss]]
+                        writer.add_summary(summary, gs)
                     else:
                         eval_fetch = [model.tensors, merged, global_step]
                         res, summary, gs = sess.run(eval_fetch)  # res = [[acc], [loss]]
+                        global eval_step
+                        writer.add_summary(summary, eval_step)
+                        eval_step = eval_step + 1
 
-                    writer.add_summary(summary, gs)
+
 
                 res = np.array(res)
 
@@ -352,13 +356,35 @@ def eval_model():
     return run_model(400, is_train=False)
 
 
+def get_or_create_eval_step():
+    graph = tf.get_default_graph()
+
+    eval_steps = graph.get_collection(tf.GraphKeys.EVAL_STEP)
+    if len(eval_steps) == 1:
+        return eval_steps[0]
+    elif len(eval_steps) > 1:
+        raise ValueError('Multiple tensors added to tf.GraphKeys.EVAL_STEP')
+    else:
+        counter = tf.get_variable(
+            'eval_step',
+            shape=[],
+            dtype=tf.int64,
+            initializer=tf.zeros_initializer(),
+            trainable=False,
+            collections=[tf.GraphKeys.GLOBAL_VARIABLES, tf.GraphKeys.EVAL_STEP])
+        return counter
+
+
+eval_step = 0
+
+
 def main(_):
     if FLAGS.build_data:
         build_data()
         return
 
     if FLAGS.test:
-        run_model(400, is_train=False, inspect_data=True, plot=False)
+        run_model(400, is_train=False, inspect_data=True, plot=FLAGS.plot)
     else:
         res = []
 

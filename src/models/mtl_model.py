@@ -59,9 +59,7 @@ class MTLModel(BaseModel):
 
         with tf.variable_scope("shared"):
             self.shared_conv = _get_model()
-            self.shared_linear = LinearLayer('linear_shared', TASK_NUM, True)
-
-            # self.shared_linear = tf.keras.layers.Dense(TASK_NUM, activation=None, name='leaner_shared')
+            self.shared_linear = tf.keras.layers.Dense(TASK_NUM, activation=None, name='leaner_shared')
 
         self.tensors = []
         self.pred = {}
@@ -84,7 +82,7 @@ class MTLModel(BaseModel):
             feature = tf.nn.dropout(feature, FLAGS.keep_prob)
 
         # Map the features to TASK_NUM classes
-        logits, _ = self.shared_linear(feature)
+        logits = self.shared_linear(feature)
 
         label = tf.one_hot(task_label, TASK_NUM)
         loss_adv = tf.reduce_mean(
@@ -96,23 +94,24 @@ class MTLModel(BaseModel):
         '''Orthogonality Constraints from https://github.com/tensorflow/models,
         in directory research/domain_adaptation
         '''
-        task_feat -= tf.reduce_mean(task_feat, 0)
-        shared_feat -= tf.reduce_mean(shared_feat, 0)
+        with tf.name_scope("diff_loss"):
+            task_feat -= tf.reduce_mean(task_feat, 0)
+            shared_feat -= tf.reduce_mean(shared_feat, 0)
 
-        task_feat = tf.nn.l2_normalize(task_feat, 1)
-        shared_feat = tf.nn.l2_normalize(shared_feat, 1)
+            task_feat = tf.nn.l2_normalize(task_feat, 1)
+            shared_feat = tf.nn.l2_normalize(shared_feat, 1)
 
-        correlation_matrix = tf.matmul(
-            task_feat, shared_feat, transpose_a=True)
+            correlation_matrix = tf.matmul(
+                task_feat, shared_feat, transpose_a=True)
 
-        cost = tf.reduce_mean(tf.square(correlation_matrix))
-        cost = tf.where(cost > 0, cost, 0, name='value')
+            cost = tf.reduce_mean(tf.square(correlation_matrix))
+            cost = tf.where(cost > 0, cost, 0, name='value')
 
-        assert_op = tf.Assert(tf.is_finite(cost), [cost])
-        with tf.control_dependencies([assert_op]):
-            loss_diff = tf.identity(cost)
+            assert_op = tf.Assert(tf.is_finite(cost), [cost])
+            with tf.control_dependencies([assert_op]):
+                loss_diff = tf.identity(cost)
 
-        return loss_diff
+            return loss_diff
 
     def attention_diff_loss(self, shared_feat, task_feat):
         correlation_matrix = tf.matmul(
@@ -157,10 +156,8 @@ class MTLModel(BaseModel):
             feature = tf.concat([feature, tf.expand_dims(vader, axis=-1)], axis=1)
 
         # Map the features to 2 classes
-        linear = LinearLayer('linear', 2, True)
-        logits, loss_l2 = linear(feature)
-        # linear = tf.keras.layers.Dense(2, activation=None)
-        # logits = linear(feature)
+        linear = tf.keras.layers.Dense(2, activation=None)
+        logits = linear(feature)
 
         xentropy = tf.nn.softmax_cross_entropy_with_logits(
             labels=tf.one_hot(labels, 2),
@@ -178,13 +175,13 @@ class MTLModel(BaseModel):
         loss_diff = FLAGS.diff_weight * loss_diff
 
         def separate_accuracy(linear_layer, private_out, shared_out):
-            w0 = tf.slice(linear_layer.weights[0], [0, 0], [2 * FLAGS.hidden_size, linear_layer.out_size])
+            w0 = tf.slice(linear_layer.weights[0], [0, 0], [2 * FLAGS.hidden_size, linear_layer.units])
             w1, w2 = tf.split(w0, 2)
             logits1 = tf.nn.xw_plus_b(private_out, w1, linear_layer.weights[1])
             logits2 = tf.nn.xw_plus_b(shared_out, w2, linear_layer.weights[1])
 
             if FLAGS.vader:
-                w3 = tf.slice(linear_layer.weights[0], [2 * FLAGS.hidden_size - 1, 0], [1, linear_layer.out_size])
+                w3 = tf.slice(linear_layer.weights[0], [2 * FLAGS.hidden_size - 1, 0], [1, linear_layer.units])
                 logits3 = tf.nn.xw_plus_b(tf.expand_dims(vader, axis=-1), w3, linear_layer.weights[1])
 
                 def calcute_acc(logits, labels):
@@ -210,7 +207,9 @@ class MTLModel(BaseModel):
         # fetches
         self.data[task_name] = data
         self.pred[task_name] = pred
-        self.separate_acc[task_name] = separate_accuracy(linear, conv_out, shared_out)
+        with tf.name_scope('separate_accuracy'):
+            self.separate_acc[task_name] = separate_accuracy(linear, conv_out, shared_out)
+
         if FLAGS.model in ["lstm", "gru"]:
             self.alignments[task_name] = (conv_layer.alignment, self.shared_conv.alignment)
         self.metric_tensors.append((
@@ -236,10 +235,14 @@ class MTLModel(BaseModel):
 
     def build_train_op(self):
         if self.is_train:
-            self.train_ops = []
+            optimizer = tf.train.AdamOptimizer(FLAGS.lrn_rate)
+            global_step = tf.train.get_or_create_global_step()
+
+            all_grads_and_vars = []
             for _, loss in self.tensors:
-                train_op = optimize(loss)
-                self.train_ops.append(train_op)
+                grads_and_vars = optimizer.compute_gradients(loss)
+                all_grads_and_vars.extend(grads_and_vars)
+            self.train_ops = optimizer.apply_gradients(all_grads_and_vars, global_step=global_step)
 
 
 def build_train_valid_model(model_name, word_embed, all_train, all_test, adv, test):

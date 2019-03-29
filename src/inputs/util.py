@@ -11,6 +11,8 @@ flags.DEFINE_string("logdir", "saved_models/", "where to save the model")
 
 flags.DEFINE_string("raw_data", "data/mtl-dataset/", "raw data path")
 
+flags.DEFINE_boolean('plot', False, 'whether plot attention in test')
+
 flags.DEFINE_string("data_dir", "data/generated", "tensorflow record dir")
 
 flags.DEFINE_boolean('subword', False, 'use subword text encoder')
