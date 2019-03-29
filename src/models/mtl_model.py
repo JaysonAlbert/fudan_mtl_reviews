@@ -7,16 +7,16 @@ FLAGS = tf.app.flags.FLAGS
 from inputs import fudan
 from inputs.util import get_vocab_file
 
-TASK_NUM=14
+TASK_NUM = 14
 
 
 def _get_model():
     if FLAGS.model == "cnn":
-      return ConvLayer('conv', FILTER_SIZES)
+        return ConvLayer('conv', FILTER_SIZES)
     elif FLAGS.model in ["lstm", "gru"]:
-      return LSTMLayer(FLAGS.model)
+        return LSTMLayer(FLAGS.model)
     else:
-      raise "model type '{}'not support, only cnn and lstm are supported".format(FLAGS.model)
+        raise "model type '{}'not support, only cnn and lstm are supported".format(FLAGS.model)
 
 
 def length_from_sentence(sentence):
@@ -24,235 +24,232 @@ def length_from_sentence(sentence):
 
 
 def _summary_mean(tensor, pos, name):
-  mean = tf.stack([t[pos] for t in tensor], axis=0)
-  mean = tf.reduce_mean(mean, axis=0)
-  return tf.summary.scalar(name, mean)
+    mean = tf.stack([t[pos] for t in tensor], axis=0)
+    mean = tf.reduce_mean(mean, axis=0)
+    return tf.summary.scalar(name, mean)
 
 
 class MTLModel(BaseModel):
 
-  def __init__(self, word_embed, all_data, adv, is_train):
-    # input data
-    # self.all_data = all_data
-    self.is_train = is_train
-    self.adv = adv
+    def __init__(self, word_embed, all_data, adv, is_train):
+        # input data
+        # self.all_data = all_data
+        self.is_train = is_train
+        self.adv = adv
 
-    # embedding initialization
-    if word_embed is not None:
-      self.word_dim = word_embed.shape[1]
-      self.vocab_size = word_embed.shape[0]
-      w_trainable = True if self.word_dim==50 else False
-      shape = None
-    else:
-      encoder = SubwordTextEncoder(get_vocab_file())
-      self.word_dim = FLAGS.hidden_size
-      self.vocab_size = encoder.vocab_size
-      word_embed = tf.random_normal_initializer(0.0, self.word_dim**-0.5)
-      w_trainable = True
-      shape = [self.vocab_size, self.word_dim]
-    
-    self.word_embed = tf.get_variable('word_embed', 
-                                      initializer=word_embed,
-                                      shape=shape,
-                                      dtype=tf.float32,
-                                      trainable=w_trainable)
+        # embedding initialization
+        if word_embed is not None:
+            self.word_dim = word_embed.shape[1]
+            self.vocab_size = word_embed.shape[0]
+            w_trainable = True if self.word_dim == 50 else False
+            shape = None
+        else:
+            encoder = SubwordTextEncoder(get_vocab_file())
+            self.word_dim = FLAGS.hidden_size
+            self.vocab_size = encoder.vocab_size
+            word_embed = tf.random_normal_initializer(0.0, self.word_dim ** -0.5)
+            w_trainable = True
+            shape = [self.vocab_size, self.word_dim]
 
-    with tf.variable_scope("shared"):
-      self.shared_conv = _get_model()
-      self.shared_linear = LinearLayer('linear_shared', TASK_NUM, True)
-      
-      # self.shared_linear = tf.keras.layers.Dense(TASK_NUM, activation=None, name='leaner_shared')
+        self.word_embed = tf.get_variable('word_embed',
+                                          initializer=word_embed,
+                                          shape=shape,
+                                          dtype=tf.float32,
+                                          trainable=w_trainable)
 
-    self.tensors = []
-    self.pred = {}
-    self.separate_acc = {}
-    self.metric_tensors = []
-    self.data = {}
-    self.alignments = {}
+        with tf.variable_scope("shared"):
+            self.shared_conv = _get_model()
+            self.shared_linear = LinearLayer('linear_shared', TASK_NUM, True)
 
-    for task_name, data in all_data:
-      with tf.variable_scope(task_name):
-        self.build_task_graph(data, task_name)
+            # self.shared_linear = tf.keras.layers.Dense(TASK_NUM, activation=None, name='leaner_shared')
 
-  def adversarial_loss(self, feature, task_label):
-    '''make the task classifier cannot reliably predict the task based on 
-    the shared feature
-    '''
-    # input = tf.stop_gradient(input)
-    feature = flip_gradient(feature)
-    if self.is_train:
-      feature = tf.nn.dropout(feature, FLAGS.keep_prob)
+        self.tensors = []
+        self.pred = {}
+        self.separate_acc = {}
+        self.metric_tensors = []
+        self.data = {}
+        self.alignments = {}
 
-    # Map the features to TASK_NUM classes
-    logits, _ = self.shared_linear(feature)
+        for task_name, data in all_data:
+            with tf.variable_scope(task_name):
+                self.build_task_graph(data, task_name)
 
-    label = tf.one_hot(task_label, TASK_NUM)
-    loss_adv = tf.reduce_mean(
-        tf.nn.softmax_cross_entropy_with_logits(labels=label, logits=logits))
+    def adversarial_loss(self, feature, task_label):
+        '''make the task classifier cannot reliably predict the task based on
+        the shared feature
+        '''
+        # input = tf.stop_gradient(input)
+        feature = flip_gradient(feature)
+        if self.is_train:
+            feature = tf.nn.dropout(feature, FLAGS.keep_prob)
 
-    return loss_adv
-  
-  def diff_loss(self, shared_feat, task_feat):
-    '''Orthogonality Constraints from https://github.com/tensorflow/models,
-    in directory research/domain_adaptation
-    '''
-    task_feat -= tf.reduce_mean(task_feat, 0)
-    shared_feat -= tf.reduce_mean(shared_feat, 0)
+        # Map the features to TASK_NUM classes
+        logits, _ = self.shared_linear(feature)
 
-    task_feat = tf.nn.l2_normalize(task_feat, 1)
-    shared_feat = tf.nn.l2_normalize(shared_feat, 1)
+        label = tf.one_hot(task_label, TASK_NUM)
+        loss_adv = tf.reduce_mean(
+            tf.nn.softmax_cross_entropy_with_logits(labels=label, logits=logits))
 
-    correlation_matrix = tf.matmul(
-        task_feat, shared_feat, transpose_a=True)
+        return loss_adv
 
-    cost = tf.reduce_mean(tf.square(correlation_matrix))
-    cost = tf.where(cost > 0, cost, 0, name='value')
+    def diff_loss(self, shared_feat, task_feat):
+        '''Orthogonality Constraints from https://github.com/tensorflow/models,
+        in directory research/domain_adaptation
+        '''
+        task_feat -= tf.reduce_mean(task_feat, 0)
+        shared_feat -= tf.reduce_mean(shared_feat, 0)
 
-    assert_op = tf.Assert(tf.is_finite(cost), [cost])
-    with tf.control_dependencies([assert_op]):
-      loss_diff = tf.identity(cost)
+        task_feat = tf.nn.l2_normalize(task_feat, 1)
+        shared_feat = tf.nn.l2_normalize(shared_feat, 1)
 
-    return loss_diff
+        correlation_matrix = tf.matmul(
+            task_feat, shared_feat, transpose_a=True)
 
-  def attention_diff_loss(self, shared_feat, task_feat):
-      correlation_matrix = tf.matmul(
-          task_feat, shared_feat, transpose_a=True)
+        cost = tf.reduce_mean(tf.square(correlation_matrix))
+        cost = tf.where(cost > 0, cost, 0, name='value')
 
-      cost = tf.reduce_mean(tf.square(correlation_matrix))
-      cost = tf.where(cost > 0, cost, 0, name='value')
+        assert_op = tf.Assert(tf.is_finite(cost), [cost])
+        with tf.control_dependencies([assert_op]):
+            loss_diff = tf.identity(cost)
 
-      assert_op = tf.Assert(tf.is_finite(cost), [cost])
-      with tf.control_dependencies([assert_op]):
-          loss_diff = tf.identity(cost)
+        return loss_diff
 
-      return loss_diff
+    def attention_diff_loss(self, shared_feat, task_feat):
+        correlation_matrix = tf.matmul(
+            task_feat, shared_feat, transpose_a=True)
 
-  def build_task_graph(self, data, task_name):
-    if FLAGS.vader:
-      task_label, labels, sentence, vader = data
-    else:
-      task_label, labels, sentence = data
+        cost = tf.reduce_mean(tf.square(correlation_matrix))
+        cost = tf.where(cost > 0, cost, 0, name='value')
 
-    inputs_length = length_from_sentence(sentence)
-    sentence = tf.nn.embedding_lookup(self.word_embed, sentence)
+        assert_op = tf.Assert(tf.is_finite(cost), [cost])
+        with tf.control_dependencies([assert_op]):
+            loss_diff = tf.identity(cost)
 
-    if self.is_train:
-      sentence = tf.nn.dropout(sentence, 1 - FLAGS.symbol_dropout)
-    
-    conv_layer = _get_model()
-    conv_out = conv_layer(sentence, inputs_length=inputs_length)
+        return loss_diff
 
-    with tf.variable_scope("shared"):
-      shared_out = self.shared_conv(sentence, inputs_length=inputs_length)
+    def build_task_graph(self, data, task_name):
+        if FLAGS.vader:
+            task_label, labels, sentence, vader = data
+        else:
+            task_label, labels, sentence = data
 
-    if self.adv:
-      feature = tf.concat([conv_out, shared_out], axis=1)
-    else:
-      feature = conv_out
+        inputs_length = length_from_sentence(sentence)
+        sentence = tf.nn.embedding_lookup(self.word_embed, sentence)
 
-    if self.is_train:
-      feature = tf.nn.dropout(feature, FLAGS.keep_prob)
+        if self.is_train:
+            sentence = tf.nn.dropout(sentence, 1 - FLAGS.symbol_dropout)
 
-    if FLAGS.vader:
-      feature = tf.concat([feature, tf.expand_dims(vader, axis=-1)], axis=1)
+        conv_layer = _get_model()
+        conv_out = conv_layer(sentence, inputs_length=inputs_length)
 
-    # Map the features to 2 classes
-    linear = LinearLayer('linear', 2, True)
-    logits, loss_l2 = linear(feature)
-    # linear = tf.keras.layers.Dense(2, activation=None)
-    # logits = linear(feature)
-    
-    xentropy = tf.nn.softmax_cross_entropy_with_logits(
-                          labels=tf.one_hot(labels, 2), 
-                          logits=logits)
-    loss_ce = tf.reduce_mean(xentropy)
+        with tf.variable_scope("shared"):
+            shared_out = self.shared_conv(sentence, inputs_length=inputs_length)
 
-    loss_adv = self.adversarial_loss(shared_out, task_label)
+        if self.adv:
+            feature = tf.concat([conv_out, shared_out], axis=1)
+        else:
+            feature = conv_out
 
-    if FLAGS.model in ["lstm", "gru"] and FLAGS.attention_diff:
-      loss_diff = self.attention_diff_loss(self.shared_conv.alignment, conv_layer.alignment)
-    else:
-      loss_diff = self.diff_loss(shared_out, conv_out)
+        if self.is_train:
+            feature = tf.nn.dropout(feature, FLAGS.keep_prob)
 
-    loss_adv = FLAGS.adv_weight * loss_adv
-    loss_diff = FLAGS.diff_weight * loss_diff
+        if FLAGS.vader:
+            feature = tf.concat([feature, tf.expand_dims(vader, axis=-1)], axis=1)
 
-    def separate_accuracy(linear_layer, private_out, shared_out):
-      w0 = tf.slice(linear_layer.weights[0], [0, 0], [2 * FLAGS.hidden_size, linear_layer.out_size])
-      w1, w2 = tf.split(w0, 2)
-      logits1 = tf.nn.xw_plus_b(private_out, w1, linear_layer.weights[1])
-      logits2 = tf.nn.xw_plus_b(shared_out, w2, linear_layer.weights[1])
+        # Map the features to 2 classes
+        linear = LinearLayer('linear', 2, True)
+        logits, loss_l2 = linear(feature)
+        # linear = tf.keras.layers.Dense(2, activation=None)
+        # logits = linear(feature)
 
-      if FLAGS.vader:
-        w3 = tf.slice(linear_layer.weights[0], [2 * FLAGS.hidden_size - 1, 0], [1, linear_layer.out_size])
-        logits3 = tf.nn.xw_plus_b(tf.expand_dims(vader, axis=-1), w3, linear_layer.weights[1])
+        xentropy = tf.nn.softmax_cross_entropy_with_logits(
+            labels=tf.one_hot(labels, 2),
+            logits=logits)
+        loss_ce = tf.reduce_mean(xentropy)
 
-        def calcute_acc(logits, labels):
-          pred = tf.argmax(logits, axis=1)
-          acc = tf.cast(tf.equal(pred, labels), tf.float32)
-          return tf.reduce_mean(acc)
+        loss_adv = self.adversarial_loss(shared_out, task_label)
 
-      if FLAGS.vader:
-        return calcute_acc(logits1, labels), calcute_acc(logits2, labels), calcute_acc(logits3,
-                                                                                       labels), logits1, logits2, logits3
-      else:
-        return calcute_acc(logits1, labels), calcute_acc(logits2, labels), logits1, logits2
+        if FLAGS.model in ["lstm", "gru"] and FLAGS.attention_diff:
+            loss_diff = self.attention_diff_loss(self.shared_conv.alignment, conv_layer.alignment)
+        else:
+            loss_diff = self.diff_loss(shared_out, conv_out)
 
+        loss_adv = FLAGS.adv_weight * loss_adv
+        loss_diff = FLAGS.diff_weight * loss_diff
 
-    if self.adv:
-      loss = loss_ce + loss_adv+ loss_diff
-    else:
-      loss = loss_ce
-    
-    pred = tf.argmax(logits, axis=1)
-    acc = tf.cast(tf.equal(pred, labels), tf.float32)
-    acc = tf.reduce_mean(acc)
+        def separate_accuracy(linear_layer, private_out, shared_out):
+            w0 = tf.slice(linear_layer.weights[0], [0, 0], [2 * FLAGS.hidden_size, linear_layer.out_size])
+            w1, w2 = tf.split(w0, 2)
+            logits1 = tf.nn.xw_plus_b(private_out, w1, linear_layer.weights[1])
+            logits2 = tf.nn.xw_plus_b(shared_out, w2, linear_layer.weights[1])
 
-    # fetches
-    self.data[task_name] = data
-    self.pred[task_name] = pred
-    self.separate_acc[task_name] = separate_accuracy(linear, conv_out, shared_out)
-    if FLAGS.model in ["lstm", "gru"]:
-        self.alignments[task_name] = (conv_layer.alignment, self.shared_conv.alignment)
-    self.metric_tensors.append((
-      loss_ce, loss_adv, loss_diff, acc ,loss
-    ))
-    self.tensors.append((acc, loss))
+            if FLAGS.vader:
+                w3 = tf.slice(linear_layer.weights[0], [2 * FLAGS.hidden_size - 1, 0], [1, linear_layer.out_size])
+                logits3 = tf.nn.xw_plus_b(tf.expand_dims(vader, axis=-1), w3, linear_layer.weights[1])
 
-  def merged_summary(self, name_scope):
-    summarys = []
-    metric_names = ['loss-ce', 'loss-adv', 'loss-diff', 'acc', 'loss']
-    for i, data in enumerate(self.metric_tensors):
-      with tf.name_scope(fudan.get_task_name(i)):
-        with tf.name_scope(name_scope):
-          summarys.extend([tf.summary.scalar(metric_names[index], tensor) for index, tensor in enumerate(data)])
+                def calcute_acc(logits, labels):
+                    pred = tf.argmax(logits, axis=1)
+                    acc = tf.cast(tf.equal(pred, labels), tf.float32)
+                    return tf.reduce_mean(acc)
 
-    with tf.name_scope('mean'):
-      with tf.name_scope(name_scope):
-        for i, name in enumerate(metric_names):
-          summarys.append(_summary_mean(self.metric_tensors, i, name))
+            if FLAGS.vader:
+                return calcute_acc(logits1, labels), calcute_acc(logits2, labels), calcute_acc(logits3,
+                                                                                               labels)
+            else:
+                return calcute_acc(logits1, labels), calcute_acc(logits2, labels)
 
-    return tf.summary.merge(summarys)
-    
-  def build_train_op(self):
-    if self.is_train:
-      self.train_ops = []
-      for _, loss in self.tensors:
-        train_op = optimize(loss)
-        self.train_ops.append(train_op)
+        if self.adv:
+            loss = loss_ce + loss_adv + loss_diff
+        else:
+            loss = loss_ce
+
+        pred = tf.argmax(logits, axis=1)
+        acc = tf.cast(tf.equal(pred, labels), tf.float32)
+        acc = tf.reduce_mean(acc)
+
+        # fetches
+        self.data[task_name] = data
+        self.pred[task_name] = pred
+        self.separate_acc[task_name] = separate_accuracy(linear, conv_out, shared_out)
+        if FLAGS.model in ["lstm", "gru"]:
+            self.alignments[task_name] = (conv_layer.alignment, self.shared_conv.alignment)
+        self.metric_tensors.append((
+            loss_ce, loss_adv, loss_diff, acc, loss
+        ))
+        self.tensors.append((acc, loss))
+
+    def merged_summary(self, name_scope):
+        summarys = []
+        metric_names = ['loss-ce', 'loss-adv', 'loss-diff', 'acc', 'loss']
+        for i, data in enumerate(self.metric_tensors):
+            with tf.name_scope(fudan.get_task_name(i)):
+                with tf.name_scope(name_scope):
+                    summarys.extend(
+                        [tf.summary.scalar(metric_names[index], tensor) for index, tensor in enumerate(data)])
+
+        with tf.name_scope('mean'):
+            with tf.name_scope(name_scope):
+                for i, name in enumerate(metric_names):
+                    summarys.append(_summary_mean(self.metric_tensors, i, name))
+
+        return tf.summary.merge(summarys)
+
+    def build_train_op(self):
+        if self.is_train:
+            self.train_ops = []
+            for _, loss in self.tensors:
+                train_op = optimize(loss)
+                self.train_ops.append(train_op)
+
 
 def build_train_valid_model(model_name, word_embed, all_train, all_test, adv, test):
-  with tf.name_scope("Train"):
     with tf.variable_scope(model_name, reuse=None):
-      m_train = MTLModel(word_embed, all_train, adv, is_train=True)
-      m_train.build_train_op()
-      m_train.set_saver(model_name)
-      # if not test:
-      #   m_train.build_train_op()
-  with tf.name_scope('Valid'):
+        m_train = MTLModel(word_embed, all_train, adv, is_train=True)
+        m_train.build_train_op()
+        m_train.set_saver(model_name)
     with tf.variable_scope(model_name, reuse=True):
-      m_valid = MTLModel(word_embed, all_test, adv, is_train=False)
-      m_valid.build_train_op()
-      m_valid.set_saver(model_name)
-  
-  return m_train, m_valid
+        m_valid = MTLModel(word_embed, all_test, adv, is_train=False)
+        m_valid.build_train_op()
+        m_valid.set_saver(model_name)
+
+    return m_train, m_valid

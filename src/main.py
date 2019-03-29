@@ -1,8 +1,5 @@
 import collections
-import json
 import os
-import sys
-import time
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -26,176 +23,106 @@ RESERVED_TOKENS = [PAD]
 
 FLAGS = tf.app.flags.FLAGS
 
-
 NUM_VALID_SAMPLES = 400
-
 
 id = 0
 
+
 def build_data():
-  '''load raw data, build vocab, build TFRecord data, trim embeddings
-  '''
-  def _build_vocab(all_data):
-    print('build vocab')
-    data = []
-    for task_data in all_data:
-      train_data, test_data = task_data
-      data.extend(train_data + test_data)
-    vocab = fudan.build_vocab(data)
-    util.write_vocab(vocab)
+    '''load raw data, build vocab, build TFRecord data, trim embeddings
+    '''
 
-    util.stat_length(data)
+    def _build_vocab(all_data):
+        print('build vocab')
+        data = []
+        for task_data in all_data:
+            train_data, test_data = task_data
+            data.extend(train_data + test_data)
+        vocab = fudan.build_vocab(data)
+        util.write_vocab(vocab)
 
-  def _build_subtoken_vocab(all_data):
-    print('build subtoken vocab')
+        util.stat_length(data)
 
-    def data_generator():
-      for task_data in all_data:
-        train_data, test_data = task_data
-        for d in train_data + test_data:
-          yield ' '.join(d.sentence)
+    def _build_subtoken_vocab(all_data):
+        print('build subtoken vocab')
 
-      for d in fudan.load_unlabeled_data():
-        yield d
+        def data_generator():
+            for task_data in all_data:
+                train_data, test_data = task_data
+                for d in train_data + test_data:
+                    yield ' '.join(d.sentence)
 
-    def summary(vocab):
-      lens = [len(vocab.encode(sentence)) for sentence in data_generator()]
-      length = sorted(lens)
-      length = np.asarray(length)
+            for d in fudan.load_unlabeled_data():
+                yield d
 
-      max_len = np.max(length)
-      avg_len = np.mean(length)
-      med_len = np.median(length)
-      print('max_len: {}, avg_len: {}, med_len: {}'.format(max_len, avg_len, med_len))
+        def summary(vocab):
+            lens = [len(vocab.encode(sentence)) for sentence in data_generator()]
+            length = sorted(lens)
+            length = np.asarray(length)
 
-    encoder = SubwordTextEncoder()
-    vocab_size = 2**10 * FLAGS.vocab_size
-    vocab = encoder.build_from_generator(data_generator(), vocab_size, 200,reserved_tokens=RESERVED_TOKENS)
+            max_len = np.max(length)
+            avg_len = np.mean(length)
+            med_len = np.median(length)
+            print('max_len: {}, avg_len: {}, med_len: {}'.format(max_len, avg_len, med_len))
 
-    vocab_file = get_vocab_file()
-    base = os.path.dirname(vocab_file)
-    tf.gfile.MakeDirs(base)
-    vocab.store_to_file(vocab_file)
+        encoder = SubwordTextEncoder()
+        vocab_size = 2 ** 10 * FLAGS.vocab_size
+        vocab = encoder.build_from_generator(data_generator(), vocab_size, 200, reserved_tokens=RESERVED_TOKENS)
 
-    summary(vocab)
-    return vocab
+        vocab_file = get_vocab_file()
+        base = os.path.dirname(vocab_file)
+        tf.gfile.MakeDirs(base)
+        vocab.store_to_file(vocab_file)
 
-  def _build_subword_data(all_data, vocab):
-    print('build subword data')
+        summary(vocab)
+        return vocab
 
-    def write(data, writer):
-      for d in data:
-        d = d._asdict()
-        d['sentence'] = vocab.encode(' '.join(d['sentence']))
-        util._pad_or_truncate(d, fudan.MAX_LEN, 0)
-        example = fudan._build_sequence_example(d)
-        writer.write(example.SerializeToString())
+    def _build_subword_data(all_data, vocab):
+        print('build subword data')
 
-    for task_id, task_data in enumerate(all_data):
-      train_data, test_data = task_data
-      train_record_file = os.path.join(data_dir(), fudan.DATASETS[task_id] + '.train.tfrecord')
-      test_record_file = os.path.join(data_dir(), fudan.DATASETS[task_id] + '.test.tfrecord')
-      train_writer = tf.python_io.TFRecordWriter(train_record_file)
-      test_writer = tf.python_io.TFRecordWriter(test_record_file)
+        def write(data, writer):
+            for d in data:
+                d = d._asdict()
+                d['sentence'] = vocab.encode(' '.join(d['sentence']))
+                util._pad_or_truncate(d, fudan.MAX_LEN, 0)
+                example = fudan._build_sequence_example(d)
+                writer.write(example.SerializeToString())
 
-      write(train_data, train_writer)
-      write(test_data, test_writer)
-    
-  def _build_data(all_data):
-    print('build data')
-    vocab2id = util.load_vocab2id()
+        for task_id, task_data in enumerate(all_data):
+            train_data, test_data = task_data
+            train_record_file = os.path.join(data_dir(), fudan.DATASETS[task_id] + '.train.tfrecord')
+            test_record_file = os.path.join(data_dir(), fudan.DATASETS[task_id] + '.test.tfrecord')
+            train_writer = tf.python_io.TFRecordWriter(train_record_file)
+            test_writer = tf.python_io.TFRecordWriter(test_record_file)
 
-    for task_id, task_data in enumerate(all_data):
-      train_data, test_data = task_data
-      fudan.write_as_tfrecord(train_data, test_data, task_id, vocab2id)
+            write(train_data, train_writer)
+            write(test_data, test_writer)
 
-  def _trim_embed():
-    print('trimming pretrained embeddings')
-    util.trim_embeddings(FLAGS.hidden_size)
+    def _build_data(all_data):
+        print('build data')
+        vocab2id = util.load_vocab2id()
 
-  print('load raw data')
-  all_data = []
-  for task_data in fudan.load_raw_data():
-    all_data.append(task_data)
+        for task_id, task_data in enumerate(all_data):
+            train_data, test_data = task_data
+            fudan.write_as_tfrecord(train_data, test_data, task_id, vocab2id)
 
-  if FLAGS.subword:
-    vacob = _build_subtoken_vocab(all_data)
-    _build_subword_data(all_data, vacob)
-  else:
-    _build_vocab(all_data)
+    def _trim_embed():
+        print('trimming pretrained embeddings')
+        util.trim_embeddings(FLAGS.hidden_size)
 
-    _build_data(all_data)
-    _trim_embed()
+    print('load raw data')
+    all_data = []
+    for task_data in fudan.load_raw_data():
+        all_data.append(task_data)
 
+    if FLAGS.subword:
+        vacob = _build_subtoken_vocab(all_data)
+        _build_subword_data(all_data, vacob)
+    else:
+        _build_vocab(all_data)
 
-  
-def train(sess, m_train, m_valid):
-  best_acc, best_step= 0., 0
-  start_time = time.time()
-  orig_begin_time = start_time
-
-  summary_prefix = os.path.join(get_logdir(), model_name())
-
-  train_writer = tf.summary.FileWriter(summary_prefix + '/train', sess.graph)
-  valid_writer = tf.summary.FileWriter(summary_prefix + '/valid', sess.graph)
-
-  n_task = len(m_train.tensors)
-
-  batches = int(16 * 82/FLAGS.batch_size)
-
-  merged_train = m_train.merged_summary('train')
-  merged_valid = m_valid.merged_summary('valid')
-
-  global_step = tf.train.get_or_create_global_step()
-
-  num_step = 0
-  for epoch in range(FLAGS.num_epochs):
-    all_loss, all_acc = 0., 0.
-    for batch in range(batches):
-      train_fetch = [m_train.tensors, m_train.train_ops, merged_train, global_step]
-
-      res, _, summary, gs = sess.run(train_fetch)    # res = [[acc], [loss]]
-      res = np.array(res)
-
-      train_writer.add_summary(summary, gs)
-
-      all_loss += sum(res[:, 1].astype(np.float))
-      all_acc += sum(res[:, 0].astype(np.float))
-      num_step = num_step + 1
-
-    all_loss /= (batches*n_task)
-    all_acc /= (batches*n_task)
-
-    # epoch duration
-    now = time.time()
-    duration = now - start_time
-    start_time = now
-
-    # valid accuracy
-    valid_acc = 0.
-
-    res, summary, gs = sess.run([m_valid.tensors, merged_valid, global_step])
-    for  acc, _ in res:
-      valid_acc += acc
-    valid_writer.add_summary(summary, gs)
-
-    valid_acc /= n_task
-
-    if best_acc < valid_acc:
-      best_acc = valid_acc
-      best_step = epoch
-
-    m_train.save(sess, global_step)
-      
-    print("Epoch %d loss %.2f acc %.2f %.4f time %.2f" % 
-             (epoch, all_loss, all_acc, valid_acc, duration))
-    sys.stdout.flush()
-  
-  duration = time.time() - orig_begin_time
-  duration /= 3600
-  print('Done training, best_epoch: %d, best_acc: %.4f' % (best_step, best_acc))
-  print('duration: %.2f hours' % duration)
-  sys.stdout.flush()
+        _build_data(all_data)
+        _trim_embed()
 
 
 def topNarg(arr, N=5):
@@ -276,146 +203,176 @@ def plot(sentence, private_attention, shared_attention):
 
 
 def inspect(data, align, pred):
-  # for every category, plot a attention weights that
+    # for every category, plot a attention weights that
 
-  for key in data:
-    if FLAGS.vader:
-      task_labels, labels, sentences, vaders = data[key]
-    else:
-      task_labels, labels, sentences = data[key]
-    task_preds = pred[key]
-    private_alis, shared_alis = align[key]
-    lengths = np.count_nonzero(sentences, axis=1)
-    align_similarity = np.diag(cosine_similarity(private_alis, shared_alis))
-    min_sim = np.argmin(align_similarity)
-    for i in range(len(sentences)):
-      task_pred = task_preds[i]
-      length = lengths[i]
-      label = labels[i]
-      private_attention = private_alis[i][:length]
-      shared_attention = shared_alis[i][:length]
-      sentence = sentences[i][:length]
+    for key in data:
+        if FLAGS.vader:
+            task_labels, labels, sentences, vaders = data[key]
+        else:
+            task_labels, labels, sentences = data[key]
+        task_preds = pred[key]
+        private_alis, shared_alis = align[key]
+        lengths = np.count_nonzero(sentences, axis=1)
+        align_similarity = np.diag(cosine_similarity(private_alis, shared_alis))
+        min_sim = np.argmin(align_similarity)
+        for i in range(len(sentences)):
+            task_pred = task_preds[i]
+            length = lengths[i]
+            label = labels[i]
+            private_attention = private_alis[i][:length]
+            shared_attention = shared_alis[i][:length]
+            sentence = sentences[i][:length]
 
-      # ----------------------------------------------------------------------------------------------------
-      global id
-      print("=" * 100)
-      print("Id: {}".format(id))
-      print("Task: {}".format(key))
-      print("Label: {}".format(label))
-      if label != task_pred:
-        print("Result: Failed")
-      else:
-        print("Reuslt: Pass")
+            # ----------------------------------------------------------------------------------------------------
+            global id
+            print("=" * 100)
+            print("Id: {}".format(id))
+            print("Task: {}".format(key))
+            print("Label: {}".format(label))
+            if label != task_pred:
+                print("Result: Failed")
+            else:
+                print("Reuslt: Pass")
 
-      plot(sentence, private_attention, shared_attention)
-      id = id + 1
-      # ----------------------------------------------------------------------------------------------------
-      print("=" * 100)
-      print("\n\n")
-
-
-def check_separate_acc(data, align, pred, separate_acc):
-    task_name = 'sports_outdoors'
-    if FLAGS.vader:
-        task_labels, labels, sentences, vaders = data[task_name]
-        private_acc, shared_acc, vader_acc, logits1, logits2, logits3 = separate_acc[task_name]
-    else:
-        task_labels, labels, sentences = data[task_name]
-        private_acc, shared_acc, logits1, logits2 = separate_acc[task_name]
-    private_align, shared_align = align[task_name]
-    pred = pred[task_name]
-
-
-
-
-def test(sess, m_valid):
-  m_valid.restore(sess)
-
-  errors = collections.defaultdict(list)
-
-  for _ in range(int(NUM_VALID_SAMPLES / FLAGS.batch_size)):
-      res, data, align, pred, separate_acc = sess.run([m_valid.tensors, m_valid.data, m_valid.alignments, m_valid.pred,
-                                                       m_valid.separate_acc])  # res = [[acc], [loss]]
-      # inspect(data, align, pred)
-      # check_separate_acc(data, align, pred, separate_acc)
-      if FLAGS.vader:
-          for i, ((acc, _), (private_acc, shared_acc, vader_acc, logits1, logits2, logits3)) in enumerate(
-                  zip(res, separate_acc.values())):
-              errors[fudan.get_task_name(i)].append(
-                  [float(acc), float(private_acc), float(shared_acc), float(vader_acc)])
-      else:
-          for i, ((acc, _), (private_acc, shared_acc, logits1, logits2)) in enumerate(zip(res, separate_acc.values())):
-            errors[fudan.get_task_name(i)].append([float(acc), float(private_acc), float(shared_acc)])
-
-      f = open("result.json", 'w')
-      json.dump(errors,f)
-      f.close()
-
-  columns = ['err', 'private_err', 'shared_err', 'vader_err'] if FLAGS.vader else ['err', 'private_err', 'shared_err']
-
-  df = 1 - pd.DataFrame(
-      data=np.array(list(errors.values())).mean(axis=1),
-      index=list(errors.keys()),
-      columns=columns
-  )
-  print(df)
-  print(df.mean())
-  df.mean().to_csv('result_{}.csv'.format(FLAGS.restore_ckpt))
+            plot(sentence, private_attention, shared_attention)
+            id = id + 1
+            # ----------------------------------------------------------------------------------------------------
+            print("=" * 100)
+            print("\n\n")
 
 
 def model_name():
     model_name = 'fudan-mtl'
     if FLAGS.model in ['lstm', 'gru']:
-      model_name += '-' + FLAGS.model
+        model_name += '-' + FLAGS.model
     if FLAGS.adv:
-      model_name += '-adv'
+        model_name += '-adv'
     if FLAGS.subword:
-      model_name += '-subword'
+        model_name += '-subword'
     return model_name
 
 
+def input_fn(is_train):
+    return fudan.load_dataset(FLAGS.num_epochs, FLAGS.batch_size, is_train)
+
+
+def run_model(num_examples, is_train, inspect_data=False, plot=False):
+    if FLAGS.subword:
+        word_embed = None
+    else:
+        word_embed = util.load_embedding(word_dim=FLAGS.hidden_size)
+
+    name = "train" if is_train else "eval"
+
+    with tf.Graph().as_default():
+
+        global_step = tf.train.get_or_create_global_step()
+        model = mtl_model.MTLModel(word_embed, input_fn(is_train=is_train), FLAGS.adv, is_train=is_train)
+        model.build_train_op()
+        model.set_saver(model_name())
+
+        with tf.Session() as sess:
+            try:
+                init_op = tf.group(tf.global_variables_initializer(),
+                                   tf.local_variables_initializer())  # for file queue
+                sess.run(init_op)
+                model.restore(sess)
+            except Exception as e:
+                tf.logging.warning("restore failed: {}".format(str(e)))
+
+            summary_prefix = os.path.join(get_logdir(), model_name())
+            writer = tf.summary.FileWriter(summary_prefix + '/{}'.format(name), sess.graph)
+
+            n_task = len(model.tensors)
+            batches = num_examples / FLAGS.batch_size
+
+            merged = model.merged_summary(name)
+
+            all_loss, all_acc = 0., 0.
+
+            if inspect_data:
+                eval_errors = collections.defaultdict(list)
+
+            for batch in range(int(batches)):
+                if inspect_data:
+                    eval_fetch = [model.tensors, model.data, model.alignments, model.pred, model.separate_acc]
+                    res, data, align, pred, separate_acc = sess.run(eval_fetch)  # res = [[acc], [loss]]
+
+                    if plot:
+                        inspect(data, align, pred)
+
+                    if FLAGS.vader:
+                        for i, ((acc, _), (private_acc, shared_acc, vader_acc)) in enumerate(zip(res, separate_acc.values())):
+                            eval_errors[fudan.get_task_name(i)].append([float(acc), float(private_acc), float(shared_acc), float(vader_acc)])
+                    else:
+                        for i, ((acc, _), (private_acc, shared_acc)) in enumerate(zip(res, separate_acc.values())):
+                            eval_errors[fudan.get_task_name(i)].append(
+                                [float(acc), float(private_acc), float(shared_acc)])
+
+                else:
+                    if is_train:
+                        train_fetch = [model.tensors, model.train_ops, merged, global_step]
+                        res, _, summary, gs = sess.run(train_fetch)  # res = [[acc], [loss]]
+                    else:
+                        eval_fetch = [model.tensors, merged, global_step]
+                        res, summary, gs = sess.run(eval_fetch)  # res = [[acc], [loss]]
+
+                    writer.add_summary(summary, gs)
+
+                res = np.array(res)
+
+                all_loss += sum(res[:, 1].astype(np.float))
+                all_acc += sum(res[:, 0].astype(np.float))
+
+
+            all_loss /= (batches * n_task)
+            all_acc /= (batches * n_task)
+
+            if is_train:
+                model.save(sess, global_step)
+
+            if inspect_data:
+                columns = ['err', 'private_err', 'shared_err', 'vader_err'] if FLAGS.vader else ['err', 'private_err', 'shared_err', 'vader_err']
+                df = 1- pd.DataFrame(
+                    data=np.array(list(eval_errors.values())).mean(axis=1),
+                    index=list(eval_errors.keys()),
+                    columns=columns
+                )
+
+                print(df)
+                print(df.mean())
+
+            return all_loss, all_acc
+
+def train_model():
+    return run_model(1600, is_train=True)
+
+
+def eval_model():
+    return run_model(400, is_train=False)
+
+
 def main(_):
-  if FLAGS.build_data:
-    build_data()
-    return
+    if FLAGS.build_data:
+        build_data()
+        return
 
-  if FLAGS.subword:
-    word_embed = None
-  else:
-    word_embed = util.load_embedding(word_dim=FLAGS.hidden_size)
+    if FLAGS.test:
+        run_model(400, is_train=False, inspect_data=True, plot=False)
+    else:
+        res = []
 
-  with tf.Graph().as_default():
-    all_train = []
-    all_test = []
-    data_iter = fudan.read_tfrecord(FLAGS.num_epochs, FLAGS.batch_size)
-    for task_id, (train_data, test_data) in enumerate(data_iter):
-      task_name = fudan.get_task_name(task_id)
-      all_train.append((task_name, train_data))
-      all_test.append((task_name, test_data))
+        for i in range(FLAGS.num_epochs):
+            train_loss, train_acc = train_model()
+            eval_loss, eval_acc = eval_model()
+            res.append({
+                'train_loss': train_loss,
+                'train_acc': train_acc,
+                'eval_loss': eval_loss,
+                'eval_acc': eval_acc
+            })
 
-    m_train, m_valid = mtl_model.build_train_valid_model(
-            model_name(), word_embed, all_train, all_test, FLAGS.adv, FLAGS.test)
-
-    config = tf.ConfigProto()
-    config.gpu_options.allow_growth = True
-    
-    with tf.Session(config=config) as sess:
-
-      try:
-        m_train.restore(sess)
-      except Exception as e:
-        init_op = tf.group(tf.global_variables_initializer(),
-                           tf.local_variables_initializer())  # for file queue
-        sess.run(init_op)
-        tf.logging.warning("restore failed: {}".format(str(e)))
-
-      print('='*80)
-
-      if FLAGS.test:
-        test(sess, m_valid)
-      else:
-        train(sess, m_train, m_valid)
-      
+            print("Epoch: {}, {}".format(i, res[-1]))
 
 if __name__ == '__main__':
-  tf.app.run()
+    tf.app.run()
