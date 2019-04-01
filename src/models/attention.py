@@ -87,7 +87,7 @@ class Attention(tf.keras.layers.Layer):
 
     def build(self, input_shape):
         last_dim = input_shape[-1]
-        self.layers = [tf.keras.layers.Dense(last_dim, activation='relu')]
+        self.layers = [tf.keras.layers.Dense(last_dim, activation='tanh')]
         self.output_layer = tf.keras.layers.Dense(1, activation=None)
 
     def call(self, inputs, **kwargs):

@@ -25,7 +25,7 @@ class LSTMLayer(tf.keras.layers.Layer):
 
     def build(self, input_shape):
         if self.cell_type == "lstm":
-            cell = tf.contrib.rnn.LSTMCell
+            cell = tf.contrib.rnn.LayerNormBasicLSTMCell
         elif self.cell_type == "gru":
             cell = tf.contrib.rnn.GRUCell
         else:
@@ -35,7 +35,7 @@ class LSTMLayer(tf.keras.layers.Layer):
                        for _ in range(FLAGS.num_layers)]
 
         if FLAGS.use_attention:
-            self.attention = Attention(3)
+            self.attention = Attention(1)
 
         super(LSTMLayer, self).build(input_shape)
 
@@ -51,7 +51,7 @@ class LSTMLayer(tf.keras.layers.Layer):
         )
 
         if FLAGS.use_attention:
-            context = self.attention(inputs, inputs_length=inputs_length)
+            context = self.attention(output, inputs_length=inputs_length)
             self.alignment = self.attention.alignments
             return context
 

@@ -1,5 +1,6 @@
 import collections
 import os
+import time
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -375,7 +376,7 @@ def get_or_create_eval_step():
         return counter
 
 
-eval_step = 0
+eval_step = 500
 
 
 def main(_):
@@ -388,6 +389,7 @@ def main(_):
     else:
         res = []
 
+        now = time.time()
         for i in range(FLAGS.num_epochs):
             train_loss, train_acc = train_model()
             eval_loss, eval_acc = eval_model()
@@ -398,7 +400,10 @@ def main(_):
                 'eval_acc': eval_acc
             })
 
-            print("Epoch: {}, {}".format(i, res[-1]))
+            duration = time.time() - now
+            now = time.time()
+
+            print("Epoch: {}, {}\nduration: {:.2f} s".format(i, res[-1], duration))
 
 if __name__ == '__main__':
     tf.app.run()
